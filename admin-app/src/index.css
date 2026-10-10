@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F7F8FA;
+  --white: #FFFFFF;
+  --border: #E4E7ED;
+  --border2: #D0D5DD;
+  --text: #111827;
+  --muted: #6B7280;
+  --indigo: #4F46E5;
+  --indigo-light: #EEF2FF;
+  --green: #059669;
+  --green-light: #D1FAE5;
+  --amber: #D97706;
+  --amber-light: #FEF3C7;
+  --red: #DC2626;
+  --red-light: #FEE2E2;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Non-draggable parts for Electron window header drag spaces */
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+.drag-region {
+  -webkit-app-region: drag;
+}

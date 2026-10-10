@@ -1,0 +1,117 @@
+CREATE TABLE IF NOT EXISTS teachers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  subject TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS students (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  roll_no TEXT NOT NULL,
+  class_section TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  avatar_color TEXT DEFAULT '#6366f1',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT UNIQUE NOT NULL,
+  teacher_id INTEGER NOT NULL,
+  subject TEXT NOT NULL,
+  class_name TEXT NOT NULL,
+  topic TEXT,
+  status TEXT DEFAULT 'active',
+  started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ended_at DATETIME,
+  FOREIGN KEY (teacher_id) REFERENCES teachers(id)
+);
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  room_id INTEGER NOT NULL,
+  status TEXT DEFAULT 'present',
+  joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(student_id, room_id),
+  FOREIGN KEY (student_id) REFERENCES students(id),
+  FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+
+CREATE TABLE IF NOT EXISTS notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id INTEGER NOT NULL,
+  title TEXT,
+  content TEXT NOT NULL,
+  pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+
+CREATE TABLE IF NOT EXISTS exams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  duration_mins INTEGER NOT NULL DEFAULT 30,
+  questions TEXT NOT NULL,
+  status TEXT DEFAULT 'draft',
+  launched_at DATETIME,
+  FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+
+CREATE TABLE IF NOT EXISTS exam_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  exam_id INTEGER NOT NULL,
+  answers TEXT NOT NULL,
+  score INTEGER,
+  total INTEGER,
+  percentage REAL,
+  submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(student_id, exam_id),
+  FOREIGN KEY (student_id) REFERENCES students(id),
+  FOREIGN KEY (exam_id) REFERENCES exams(id)
+);
+
+CREATE TABLE IF NOT EXISTS code_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  room_id INTEGER NOT NULL,
+  code TEXT NOT NULL,
+  language TEXT NOT NULL,
+  output TEXT,
+  submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES students(id),
+  FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+
+CREATE TABLE IF NOT EXISTS badges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER NOT NULL,
+  badge_key TEXT NOT NULL,
+  badge_name TEXT NOT NULL,
+  awarded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES students(id)
+);
+
+CREATE TABLE IF NOT EXISTS pdfs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  room_id INTEGER,
+  filename TEXT,
+  filedata BLOB,
+  filesize INTEGER,
+  pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+
+CREATE TABLE IF NOT EXISTS student_pdfs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  student_id INTEGER,
+  pdf_id INTEGER,
+  received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (student_id) REFERENCES students(id),
+  FOREIGN KEY (pdf_id) REFERENCES pdfs(id)
+);
