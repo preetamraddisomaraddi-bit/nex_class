@@ -1,4 +1,4 @@
-const { dbGet, dbRun } = require('../db/database');
+const { dbGet, dbAll, dbRun } = require('../db/database');
 
 const roomMembers = {};
 const socketUsers = {};
@@ -75,17 +75,21 @@ function registerSocketEvents(io) {
       socket.to(room_code.toUpperCase()).emit('code:broadcast', { code, language });
     });
     socket.on('code:submit', ({ room_code, student, code, language, output }) => {
-      dbGet('SELECT id FROM rooms WHERE code = ?', [room_code.toUpperCase()]).then(room => {
-        if (room) dbRun('INSERT INTO code_submissions (student_id, room_id, code, language, output) VALUES (?, ?, ?, ?, ?)',
-          [student.id, room.id, code, language, output || '']).catch(() => {});
-      }).catch(() => {});
       socket.to(room_code.toUpperCase()).emit('code:submitted', { student, code, language, output });
     });
 
     // Exam
-    socket.on('exam:launch', ({ room_code, exam }) => {
-      dbRun("UPDATE exams SET status = 'active', launched_at = CURRENT_TIMESTAMP WHERE id = ?", [exam.id]).catch(() => {});
-      socket.to(room_code.toUpperCase()).emit('exam:launched', { exam });
+    socket.on('exam:launch', async ({ room_code, exam }) => {
+      try {
+        const room = await dbGet('SELECT id FROM rooms WHERE code = ?', [room_code.toUpperCase()]);
+        if (!room) return;
+        const updated = await dbRun("UPDATE exams SET status = 'active', launched_at = CURRENT_TIMESTAMP WHERE id = ? AND room_id = ?", [exam.id, room.id]);
+        if (!updated.changes) return;
+        const saved = await dbGet('SELECT * FROM exams WHERE id = ?', [exam.id]);
+        socket.to(room_code.toUpperCase()).emit('exam:launched', {
+          exam: { ...saved, questions: JSON.parse(saved.questions) }
+        });
+      } catch (err) { console.error('[Socket] Exam launch error:', err.message); }
     });
     socket.on('exam:submit', ({ room_code, student, exam_id, score, total }) => {
       socket.to(room_code.toUpperCase()).emit('exam:student_submitted', { student, exam_id, score, total });

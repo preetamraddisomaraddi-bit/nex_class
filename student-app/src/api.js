@@ -9,6 +9,8 @@ export function getAPI() {
   return axios.create({
     baseURL: `${getServerURL()}/api`,
     timeout: 10000,
+    headers: localStorage.getItem('token')
+      ? { Authorization: `Bearer ${localStorage.getItem('token')}` } : {},
   });
 }
 

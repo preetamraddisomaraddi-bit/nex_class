@@ -1,3 +1,9 @@
+// Load local configuration before importing routes (Node.js 22+).
+const fs = require('fs');
+if (fs.existsSync(require('path').join(__dirname, '.env'))) {
+  process.loadEnvFile(require('path').join(__dirname, '.env'));
+}
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -25,6 +31,7 @@ const server = http.createServer(app);
 
 // ── Socket.IO ────────────────────────────────────────────
 const io = new Server(server, {
+  maxHttpBufferSize: 10 * 1024 * 1024,
   cors: { origin: '*', methods: ['GET', 'POST', 'PATCH'] }
 });
 
@@ -78,7 +85,9 @@ const PORT = process.env.PORT || 4000;
 
 server.listen(PORT, '0.0.0.0', () => {
   // Show LAN IP so students know where to connect
-  const interfaces = os.networkInterfaces();
+  let interfaces = {};
+  try { interfaces = os.networkInterfaces(); }
+  catch (err) { console.warn('[Server] LAN address unavailable:', err.message); }
   let lanIP = 'localhost';
   Object.values(interfaces).forEach(iface => {
     iface.forEach(addr => {

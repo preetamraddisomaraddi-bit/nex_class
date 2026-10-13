@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   base: '/register/',
   server: {
-    port: 5176
+    port: 5176,
+    proxy: { "/api": "http://localhost:4000" }
   }
 })

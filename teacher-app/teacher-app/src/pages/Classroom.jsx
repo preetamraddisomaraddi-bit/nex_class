@@ -387,40 +387,6 @@ export default function Classroom() {
     socket.emit('screen:stop', { room_code: roomCode })
   }
 
-  async function handleScreenAnswer({ answer, from }) {
-    if (!streamRef.current || !offerSDP.current) return
-
-    // Create unique PC for this student socket ID
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
-    peersRef.current[from] = pc
-
-    streamRef.current.getTracks().forEach(track => pc.addTrack(track, streamRef.current))
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        socket.emit('screen:ice_candidate', { room_code: roomCode, candidate: e.candidate, to: from })
-      }
-    }
-
-    try {
-      await pc.setLocalDescription(offerSDP.current)
-      await pc.setRemoteDescription(new RTCSessionDescription(answer))
-    } catch (err) {
-      console.error('Error binding answer SDP for student:', from, err)
-    }
-  }
-
-  async function handleScreenIceCandidate({ candidate, from }) {
-    const pc = peersRef.current[from]
-    if (pc) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate))
-      } catch (err) {
-        console.error('Error adding Ice Candidate from student:', from, err)
-      }
-    }
-  }
-
   return (
     <div className="h-screen flex flex-col bg-[#0f172a] text-white overflow-hidden relative">
 

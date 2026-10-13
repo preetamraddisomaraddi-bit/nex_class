@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const jwt = require('jsonwebtoken');
 const { dbGet, dbAll, dbRun } = require('../db/database');
 
-const JWT_SECRET = 'edusync_secret_key_2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'edusync_secret_key_2024';
 
 router.post('/create', async (req, res) => {
   try {

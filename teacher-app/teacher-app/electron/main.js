@@ -3,7 +3,7 @@ const path = require('path');
 
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = !app.isPackaged;
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
