@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"electron .\"",
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5175 && electron .\"",
     "build": "vite build",
-    "package": "electron-builder"
+    "package": "npm run build && electron-builder"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -23,14 +23,28 @@
     "postcss": "^8.4.38",
     "electron": "^28.2.0",
     "electron-builder": "^24.13.3",
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
   },
   "build": {
     "appId": "com.edusync.admin",
     "productName": "EduSync Admin",
-    "directories": { "output": "dist-electron" },
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ]
   }
 }

@@ -708,24 +708,26 @@ function ExamTab({ roomCode, socket, student, room }) {
   const [result, setResult] = useState(null)
   
   const timerRef = useRef(null)
+  const latestRef = useRef({ exam, answers, submitted })
+  const initializedExamRef = useRef(null)
+  const submittingRef = useRef(false)
+  latestRef.current = { exam, answers, submitted }
 
   useEffect(() => {
     loadActiveExam()
-    socket.on('exam:launched', ({ exam }) => {
-      initializeExam(exam)
-    })
-    socket.on('exam:ended', ({ exam_id }) => {
-      if (exam && exam.id === exam_id && !submitted) {
-        autoSubmit()
-      }
-    })
-
+    const onLaunch = ({ exam: launched }) => initializeExam(launched)
+    const onEnd = ({ exam_id }) => {
+      const current = latestRef.current
+      if (current.exam?.id === exam_id && !current.submitted) autoSubmit()
+    }
+    socket.on('exam:launched', onLaunch)
+    socket.on('exam:ended', onEnd)
     return () => {
-      socket.off('exam:launched')
-      socket.off('exam:ended')
+      socket.off('exam:launched', onLaunch)
+      socket.off('exam:ended', onEnd)
       clearInterval(timerRef.current)
     }
-  }, [exam, answers, submitted])
+  }, [room?.id])
 
   async function loadActiveExam() {
     if (!room) return
@@ -747,28 +749,33 @@ function ExamTab({ roomCode, socket, student, room }) {
   }
 
   function initializeExam(ex) {
+    // Repeated events and answer changes must not reset an active attempt.
+    if (initializedExamRef.current === ex.id) return
+    initializedExamRef.current = ex.id
+    submittingRef.current = false
+    latestRef.current = { exam: ex, answers: {}, submitted: false }
     setExam(ex)
     setSubmitted(false)
     setAnswers({})
-    
-    // Calculate elapsed time from launched_at
-    const start = new Date(ex.launched_at).getTime()
-    const limit = ex.duration_mins * 60 * 1000
-    const elapsed = Date.now() - start
-    const remaining = Math.max(0, Math.floor((limit - elapsed) / 1000))
-    
-    setTimeLeft(remaining)
+    setResult(null)
 
+    // SQLite CURRENT_TIMESTAMP is UTC, even on Windows clients in India.
+    const timestamp = ex.launched_at
+    const normalized = timestamp && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp)
+      ? timestamp.replace(' ', 'T') + 'Z' : timestamp
+    const parsedStart = new Date(normalized).getTime()
+    const start = Number.isFinite(parsedStart) ? parsedStart : Date.now()
+    const deadline = start + ex.duration_mins * 60 * 1000
+    const remaining = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+    setTimeLeft(remaining())
     clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current)
-          autoSubmit()
-          return 0
-        }
-        return prev - 1
-      })
+      const seconds = remaining()
+      setTimeLeft(seconds)
+      if (seconds === 0) {
+        clearInterval(timerRef.current)
+        autoSubmit()
+      }
     }, 1000)
   }
 
@@ -783,24 +790,28 @@ function ExamTab({ roomCode, socket, student, room }) {
   }
 
   async function submitAnswers() {
-    if (!exam || submitted) return
+    const current = latestRef.current
+    if (!current.exam || current.submitted || submittingRef.current) return
+    submittingRef.current = true
     clearInterval(timerRef.current)
     try {
       const { data } = await getAPI().post('/exam/submit', {
         student_id: student.id,
-        exam_id: exam.id,
-        answers
+        exam_id: current.exam.id,
+        answers: current.answers
       })
+      latestRef.current.submitted = true
       setSubmitted(true)
       setResult(data)
       socket.emit('exam:submit', {
         room_code: roomCode,
         student,
-        exam_id: exam.id,
+        exam_id: current.exam.id,
         score: data.score,
         total: data.total
       })
     } catch {
+      submittingRef.current = false
       alert('Failed to submit exam.')
     }
   }

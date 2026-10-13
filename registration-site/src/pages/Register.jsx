@@ -95,10 +95,7 @@ export default function Register() {
     setLoading(true)
     setError('')
     try {
-      // Find server URL dynamically or default to localhost:3000
-      const serverUrl = window.location.origin.includes('register') 
-        ? window.location.origin.replace('/register', '')
-        : 'http://localhost:3000'
+      const serverUrl = import.meta.env.VITE_API_URL || window.location.origin
 
       const { data } = await axios.post(`${serverUrl}/api/universities/register`, {
         name: form.name,

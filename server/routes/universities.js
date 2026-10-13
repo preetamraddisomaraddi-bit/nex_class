@@ -373,7 +373,7 @@ router.get('/:id/reports/attendance', verifyAdmin, async (req, res) => {
     // Low Attendance Students list
     const studentSql = `
       SELECT s.id, s.name, s.usn, d.name as department_name, sem.number as semester_number,
-             ROUND(SELECT COUNT(CASE WHEN status IN ('present', 'late') THEN 1 END) * 100.0 / MAX(1, COUNT(*)) FROM attendance WHERE student_id = s.id) as attendance_pct
+             ROUND((SELECT COUNT(CASE WHEN status IN ('present', 'late') THEN 1 END) * 100.0 / MAX(1, COUNT(*)) FROM attendance WHERE student_id = s.id)) as attendance_pct
       FROM students s
       LEFT JOIN departments d ON s.department_id = d.id
       LEFT JOIN semesters sem ON s.semester_id = sem.id

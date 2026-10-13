@@ -7,7 +7,7 @@ export default function Login() {
   const [code, setCode] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [serverUrl, setServerUrl] = useState(localStorage.getItem('admin_server_url') || 'http://localhost:3000')
+  const [serverUrl, setServerUrl] = useState(localStorage.getItem('admin_server_url') || 'http://localhost:4000')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -96,7 +96,7 @@ export default function Login() {
               <label className="block text-[9px] font-bold text-slate-400 mb-1 uppercase tracking-wider">Host Server Endpoint</label>
               <input value={serverUrl} onChange={e => setServerUrl(e.target.value)} required
                 className="w-full bg-slate-50 border border-slate-250 focus:bg-white focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none transition-colors font-mono"
-                placeholder="http://localhost:3000" />
+                placeholder="http://localhost:4000" />
             </div>
 
             {/* University Code */}

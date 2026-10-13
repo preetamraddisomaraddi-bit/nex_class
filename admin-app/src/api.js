@@ -1,17 +1,14 @@
 import axios from 'axios';
 
-// Get server URL dynamically, default to port 3000
+// Resolve the selected server for every request.
 const getBaseURL = () => {
-  return localStorage.getItem('admin_server_url') || 'http://localhost:3000';
+  return localStorage.getItem('admin_server_url') || 'http://localhost:4000';
 };
 
-const api = axios.create({
-  get baseURL() {
-    return getBaseURL();
-  }
-});
+const api = axios.create({ timeout: 10000 });
 
 api.interceptors.request.use(async (config) => {
+  config.baseURL = `${getBaseURL().replace(/\/$/, '')}/api`;
   if (window.electronAPI) {
     const token = await window.electronAPI.getToken();
     if (token) {

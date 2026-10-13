@@ -2,7 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'edusync.db');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'edusync.db');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 let db;
@@ -82,7 +82,7 @@ function runMigrations(dbInstance) {
     "ALTER TABLE students ADD COLUMN university_id INTEGER REFERENCES universities(id)",
     "ALTER TABLE students ADD COLUMN department_id INTEGER REFERENCES departments(id)",
     "ALTER TABLE students ADD COLUMN semester_id INTEGER REFERENCES semesters(id)",
-    "ALTER TABLE students ADD COLUMN usn TEXT UNIQUE",
+    "ALTER TABLE students ADD COLUMN usn TEXT",
 
     "ALTER TABLE rooms ADD COLUMN university_id INTEGER REFERENCES universities(id)",
     "ALTER TABLE rooms ADD COLUMN department_id INTEGER REFERENCES departments(id)",
@@ -99,6 +99,11 @@ function runMigrations(dbInstance) {
         }
       }
     });
+  });
+  // SQLite cannot ADD COLUMN with a UNIQUE constraint. A separate index
+  // preserves uniqueness and allows migration of existing installations.
+  dbInstance.run('CREATE UNIQUE INDEX IF NOT EXISTS students_usn_unique ON students(usn)', (err) => {
+    if (err) console.error('[Migration] USN index error:', err.message);
   });
 }
 

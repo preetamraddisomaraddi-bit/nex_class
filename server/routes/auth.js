@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { dbGet, dbRun } = require('../db/database');
 const { verifyAdmin } = require('../middleware/auth');
 
-const JWT_SECRET = 'edusync_secret_key_2024';
+const JWT_SECRET = process.env.JWT_SECRET || 'edusync_secret_key_2024';
 
 // Teacher Register
 router.post('/teacher/register', async (req, res) => {
