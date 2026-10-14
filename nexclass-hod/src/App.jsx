@@ -1,6 +1,8 @@
-import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { ToastProvider } from './components/AlertToast'
+import Login from './pages/Login'
 
 const pages = [
   ['dashboard', 'Dashboard'],
@@ -20,6 +22,48 @@ const PlaceholderPage = ({ name }) => (
   </div>
 )
 
+function AuthGate() {
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    async function checkToken() {
+      let token = null
+      try {
+        token = await window.electronAPI?.getToken?.()
+      } catch {
+        token = null
+      }
+      if (!active) return
+
+      if (token && pathname === '/login') navigate('/dashboard', { replace: true })
+      else if (!token && pathname !== '/login') navigate('/login', { replace: true })
+      setChecking(false)
+    }
+    checkToken()
+    return () => { active = false }
+    // Check persisted authentication once, when the router mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (checking) {
+    return <div aria-label="Checking sign-in" style={{ minHeight: '100vh', background: 'var(--bg)' }} />
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<AppShell><Outlet /></AppShell>}>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        {pages.map(([path, name]) => <Route key={path} path={path} element={<PlaceholderPage name={name} />} />)}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Route>
+    </Routes>
+  )
+}
+
 // Packaged Electron loads file:// URLs; hash routing keeps those routes local.
 const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter
 
@@ -27,15 +71,7 @@ export default function App() {
   return (
     <Router>
       <ToastProvider>
-        <Routes>
-          <Route path="/login" element={<div style={{ minHeight: '100vh', background: 'var(--bg)', padding: 28 }}><PlaceholderPage name="Login" /></div>} />
-          {/* Authentication is intentionally deferred until the Step 4 login page. */}
-          <Route element={<AppShell><Outlet /></AppShell>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            {pages.map(([path, name]) => <Route key={path} path={path} element={<PlaceholderPage name={name} />} />)}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Route>
-        </Routes>
+        <AuthGate />
       </ToastProvider>
     </Router>
   )
