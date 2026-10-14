@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { ToastProvider } from './components/AlertToast'
+import { HODProvider } from './context/HODContext'
+import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 
 const pages = [
@@ -57,7 +59,13 @@ function AuthGate() {
       <Route path="/login" element={<Login />} />
       <Route element={<AppShell><Outlet /></AppShell>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        {pages.map(([path, name]) => <Route key={path} path={path} element={<PlaceholderPage name={name} />} />)}
+        {pages.map(([path, name]) => (
+          <Route
+            key={path}
+            path={path}
+            element={path === 'dashboard' ? <Dashboard /> : <PlaceholderPage name={name} />}
+          />
+        ))}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
@@ -69,10 +77,12 @@ const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter
 
 export default function App() {
   return (
-    <Router>
-      <ToastProvider>
-        <AuthGate />
-      </ToastProvider>
-    </Router>
+    <HODProvider>
+      <Router>
+        <ToastProvider>
+          <AuthGate />
+        </ToastProvider>
+      </Router>
+    </HODProvider>
   )
 }

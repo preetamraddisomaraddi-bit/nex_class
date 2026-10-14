@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useToast } from './AlertToast'
+import { useHOD } from '../context/HODContext'
 
 const items = [
   { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
-  { path: '/teachers', icon: '👨‍🏫', label: 'Teachers', badge: 2 },
+  { path: '/teachers', icon: '👨‍🏫', label: 'Teachers' },
   { path: '/students', icon: '👨‍🎓', label: 'Students' },
   { path: '/analytics', icon: '📊', label: 'Analytics' },
   { path: '/sessions', icon: '📋', label: 'Session Logs' },
@@ -18,13 +19,13 @@ function Avatar({ size }) {
   return <div aria-label="Dr. Rajesh Kumar" style={{ width: size, height: size, borderRadius: '50%', background: gradient, color: 'var(--white)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>RK</div>
 }
 
-function NavigationItem({ item }) {
+function NavigationItem({ item, badge = 0 }) {
   const [hovered, setHovered] = useState(false)
   return (
     <NavLink to={item.path} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', paddingLeft: isActive ? 9 : 12, borderLeft: isActive ? '3px solid var(--indigo)' : 'none', borderRadius: 8, fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? 'var(--indigo)' : hovered ? 'var(--text)' : 'var(--muted)', background: isActive ? 'var(--indigo-light)' : hovered ? 'var(--bg)' : 'transparent', cursor: 'pointer', marginBottom: 2, textDecoration: 'none' })}>
       <span aria-hidden="true" style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
       <span style={{ flex: 1 }}>{item.label}</span>
-      {item.badge > 0 && <span aria-label={`${item.badge} pending teachers`} style={{ background: 'var(--amber-light)', color: 'var(--amber)', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 20 }}>{item.badge}</span>}
+      {badge > 0 && <span aria-label={`${badge} pending teachers`} style={{ background: 'var(--amber-light)', color: 'var(--amber)', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 20 }}>{badge}</span>}
     </NavLink>
   )
 }
@@ -33,6 +34,7 @@ export default function AppShell({ children }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const showToast = useToast()
+  const { pendingCount } = useHOD()
   const [loggingOut, setLoggingOut] = useState(false)
   const [date, setDate] = useState(() => new Date())
   useEffect(() => {
@@ -65,7 +67,7 @@ export default function AppShell({ children }) {
         </div>
         <nav aria-label="Main navigation" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted2)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '8px 10px 4px' }}>Department</div>
-          {items.map(item => <NavigationItem key={item.path} item={item} />)}
+          {items.map(item => <NavigationItem key={item.path} item={item} badge={item.path === '/teachers' ? pendingCount : 0} />)}
         </nav>
         <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
           <Avatar size={34} />
