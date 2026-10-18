@@ -4,6 +4,7 @@ import AppShell from './components/AppShell'
 import { ToastProvider } from './components/AlertToast'
 import { HODProvider } from './context/HODContext'
 import Dashboard from './pages/Dashboard'
+import Teachers from './pages/Teachers'
 import Login from './pages/Login'
 
 const pages = [
@@ -63,7 +64,7 @@ function AuthGate() {
           <Route
             key={path}
             path={path}
-            element={path === 'dashboard' ? <Dashboard /> : <PlaceholderPage name={name} />}
+            element={path === 'dashboard' ? <Dashboard /> : path === 'teachers' ? <Teachers /> : <PlaceholderPage name={name} />}
           />
         ))}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
