@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "concurrently \"vite --port 5176\" \"wait-on http://localhost:5176 && electron .\"",
     "build": "vite build",
-    "package": "vite build && electron-builder"
+    "package": "vite build && electron-builder",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg",
+    "package:linux": "npm run build && electron-builder --linux AppImage"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -25,5 +28,46 @@
     "tailwindcss": "^3.4.0",
     "vite": "^5.0.8",
     "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.nexclass.hod",
+    "productName": "NexClass HOD Portal",
+    "copyright": "Copyright © 2025 NexClass",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "NexClass-HOD-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": "dmg",
+      "artifactName": "NexClass-HOD-${version}.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "artifactName": "NexClass-HOD-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NexClass HOD"
+    }
   }
 }

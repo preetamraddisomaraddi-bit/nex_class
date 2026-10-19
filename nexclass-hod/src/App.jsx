@@ -11,6 +11,7 @@ import SessionLogs from './pages/SessionLogs'
 import Alerts from './pages/Alerts'
 import Downloads from './pages/Downloads'
 import Login from './pages/Login'
+import LoadingScreen from './components/LoadingScreen'
 
 const pages = [
   ['dashboard', 'Dashboard'],
@@ -30,48 +31,68 @@ const PlaceholderPage = ({ name }) => (
   </div>
 )
 
+const pageComponents = {
+  dashboard: Dashboard,
+  teachers: Teachers,
+  students: Students,
+  analytics: Analytics,
+  sessions: SessionLogs,
+  alerts: Alerts,
+  downloads: Downloads,
+}
+
+function ProtectedRoute({ isAuthenticated, children }) {
+  return isAuthenticated ? children : <Navigate to="/login" replace />
+}
+
 function AuthGate() {
-  const { pathname } = useLocation()
-  const navigate = useNavigate()
-  const [checking, setChecking] = useState(true)
+  const location = useLocation()
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
     let active = true
-    async function checkToken() {
-      let token = null
-      try {
-        token = await window.electronAPI?.getToken?.()
-      } catch {
-        token = null
-      }
-      if (!active) return
+    const updateAuthentication = event => setIsAuthenticated(Boolean(event.detail))
+    window.addEventListener('nexclass-auth-change', updateAuthentication)
 
-      if (token && pathname === '/login') navigate('/dashboard', { replace: true })
-      else if (!token && pathname !== '/login') navigate('/login', { replace: true })
-      setChecking(false)
+    const checkAuth = async () => {
+      let electronToken = null
+      try {
+        electronToken = await window.electronAPI?.getToken?.()
+      } catch {
+        // Browser storage remains available if Electron storage fails.
+      }
+      const browserToken = window.localStorage.getItem('nexclass_token')
+      if (!active) return
+      setIsAuthenticated(Boolean(electronToken || browserToken))
+      await new Promise(resolve => window.setTimeout(resolve, 800))
+      if (active) setAuthChecked(true)
     }
-    checkToken()
-    return () => { active = false }
-    // Check persisted authentication once, when the router mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    checkAuth()
+    return () => {
+      active = false
+      window.removeEventListener('nexclass-auth-change', updateAuthentication)
+    }
   }, [])
 
-  if (checking) {
-    return <div aria-label="Checking sign-in" style={{ minHeight: '100vh', background: 'var(--bg)' }} />
-  }
+  if (!authChecked) return <LoadingScreen />
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route element={<AppShell><Outlet /></AppShell>}>
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route element={<ProtectedRoute isAuthenticated={isAuthenticated}><AppShell><Outlet /></AppShell></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        {pages.map(([path, name]) => (
-          <Route
-            key={path}
-            path={path}
-            element={path === 'dashboard' ? <Dashboard /> : path === 'teachers' ? <Teachers /> : path === 'students' ? <Students /> : path === 'analytics' ? <Analytics /> : path === 'sessions' ? <SessionLogs /> : path === 'alerts' ? <Alerts /> : path === 'downloads' ? <Downloads /> : <PlaceholderPage name={name} />}
-          />
-        ))}
+        {pages.map(([path]) => {
+          const Page = pageComponents[path]
+          return (
+            <Route key={path} path={path} element={
+              <div key={location.pathname} className="page-enter">
+                <Page />
+              </div>
+            } />
+          )
+        })}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>

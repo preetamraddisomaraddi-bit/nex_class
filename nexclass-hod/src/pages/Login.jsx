@@ -43,10 +43,10 @@ export default function Login() {
 
     if (employeeId.trim() === 'BIT-HOD-001' && password === 'hod123') {
       try {
-        if (!window.electronAPI?.storeToken) {
-          throw new Error('Electron token storage is unavailable')
-        }
-        await window.electronAPI.storeToken('nexclass-hod-token')
+        const token = 'nexclass-hod-token'
+        await window.electronAPI?.storeToken?.(token)
+        window.localStorage.setItem('nexclass_token', token)
+        window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
         navigate('/dashboard', { replace: true })
       } catch {
         setError('Unable to sign in right now. Please try again.')

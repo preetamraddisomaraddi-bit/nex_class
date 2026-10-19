@@ -22,7 +22,7 @@ function Avatar({ size }) {
 function NavigationItem({ item, badge = 0 }) {
   const [hovered, setHovered] = useState(false)
   return (
-    <NavLink to={item.path} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', paddingLeft: isActive ? 9 : 12, borderLeft: isActive ? '3px solid var(--indigo)' : 'none', borderRadius: 8, fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? 'var(--indigo)' : hovered ? 'var(--text)' : 'var(--muted)', background: isActive ? 'var(--indigo-light)' : hovered ? 'var(--bg)' : 'transparent', cursor: 'pointer', marginBottom: 2, textDecoration: 'none' })}>
+    <NavLink to={item.path} end title={item.label} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} style={({ isActive }) => ({ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', paddingLeft: 9, borderLeft: isActive ? '3px solid var(--indigo)' : '3px solid transparent', borderRadius: 8, fontSize: 13, fontWeight: isActive ? 600 : 500, color: isActive ? 'var(--indigo)' : hovered ? 'var(--text)' : 'var(--muted)', background: isActive ? 'var(--indigo-light)' : hovered ? 'var(--bg)' : 'transparent', cursor: 'pointer', marginBottom: 2, textDecoration: 'none' })}>
       <span aria-hidden="true" style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{item.icon}</span>
       <span style={{ flex: 1 }}>{item.label}</span>
       {badge > 0 && <span aria-label={`${badge} pending teachers`} style={{ background: 'var(--amber-light)', color: 'var(--amber)', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 20 }}>{badge}</span>}
@@ -44,9 +44,12 @@ export default function AppShell({ children }) {
   const title = items.find(item => pathname === item.path || pathname.startsWith(`${item.path}/`))?.label || 'Dashboard'
   const formattedDate = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(date)
   async function logout() {
+    if (!window.confirm('Are you sure you want to logout?')) return
     setLoggingOut(true)
     try {
-      if (window.electronAPI) await window.electronAPI.clearToken()
+      await window.electronAPI?.clearToken?.()
+      window.localStorage.removeItem('nexclass_token')
+      window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: false }))
       navigate('/login', { replace: true })
     } catch {
       showToast('Unable to log out. Please try again.', 'error')
@@ -67,15 +70,20 @@ export default function AppShell({ children }) {
         </div>
         <nav aria-label="Main navigation" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted2)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '8px 10px 4px' }}>Department</div>
-          {items.map(item => <NavigationItem key={item.path} item={item} badge={item.path === '/teachers' ? pendingCount : 0} />)}
+          {items.slice(0, 5).map(item => <NavigationItem key={item.path} item={item} badge={item.path === '/teachers' ? pendingCount : 0} />)}
+          <div aria-hidden="true" style={{ height: 1, background: 'var(--border)', margin: '8px 10px' }} />
+          {items.slice(5).map(item => <NavigationItem key={item.path} item={item} badge={item.path === '/teachers' ? pendingCount : 0} />)}
         </nav>
-        <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}>
-          <Avatar size={34} />
-          <div style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
-            <div title="Dr. Rajesh Kumar" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Dr. Rajesh Kumar</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Head of Department</div>
+        <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Avatar size={34} />
+            <div style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
+              <div title="Dr. Rajesh Kumar" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Dr. Rajesh Kumar</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Head of Department</div>
+            </div>
+            <button type="button" title="Logout" aria-label="Logout" disabled={loggingOut} onClick={logout} style={{ background: 'transparent', border: 'none', cursor: loggingOut ? 'wait' : 'pointer', fontSize: 16, color: 'var(--muted)', padding: 4 }}>→</button>
           </div>
-          <button type="button" title="Logout" aria-label="Logout" disabled={loggingOut} onClick={logout} style={{ background: 'transparent', border: 'none', cursor: loggingOut ? 'wait' : 'pointer', fontSize: 16, color: 'var(--muted)', padding: 4 }}>→</button>
+          <div style={{ fontSize: 10, color: 'var(--muted2)', textAlign: 'center', marginTop: 8 }}>v1.0.0</div>
         </div>
       </aside>
       <header style={{ position: 'fixed', top: 0, left: 220, right: 0, height: 56, background: 'var(--white)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', zIndex: 50 }}>
