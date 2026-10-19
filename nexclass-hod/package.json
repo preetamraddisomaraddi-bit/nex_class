@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently \"vite --port 5176\" \"wait-on http://localhost:5176 && electron .\"",
     "build": "vite build",
+    "postinstall": "electron-builder install-app-deps",
     "package": "vite build && electron-builder",
     "package:win": "npm run build && electron-builder --win nsis --x64",
     "package:mac": "npm run build && electron-builder --mac dmg",
@@ -16,7 +17,14 @@
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0",
     "electron-store": "^8.1.0",
-    "jspdf": "^2.5.1"
+    "jspdf": "^2.5.1",
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "better-sqlite3": "^9.4.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
+    "ip": "^2.0.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
@@ -40,8 +48,12 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "server/**/*",
       "node_modules/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node"
     ],
     "win": {
       "target": [
@@ -71,3 +83,4 @@
     }
   }
 }
+
