@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { ToastProvider } from './components/AlertToast'
 import { HODProvider } from './context/HODContext'
@@ -9,68 +9,87 @@ import Students from './pages/Students'
 import Analytics from './pages/Analytics'
 import SessionLogs from './pages/SessionLogs'
 import Alerts from './pages/Alerts'
+import Downloads from './pages/Downloads'
 import Login from './pages/Login'
+import LoadingScreen from './components/LoadingScreen'
 
 const pages = [
-  ['dashboard', 'Dashboard'],
-  ['teachers', 'Teachers'],
-  ['students', 'Students'],
-  ['analytics', 'Analytics'],
-  ['sessions', 'Session Logs'],
-  ['alerts', 'Alerts'],
-  ['downloads', 'Downloads'],
+  'dashboard',
+  'teachers',
+  'students',
+  'analytics',
+  'sessions',
+  'alerts',
+  'downloads',
 ]
 
-const PlaceholderPage = ({ name }) => (
-  <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 40, textAlign: 'center', color: 'var(--text)', fontFamily: 'Inter, sans-serif' }}>
-    <div aria-hidden="true" style={{ fontSize: '2rem', marginBottom: 12 }}>🚧</div>
-    <h2 style={{ fontFamily: '"Plus Jakarta Sans", sans-serif', fontSize: '1.2rem', fontWeight: 700, marginBottom: 8 }}>{name}</h2>
-    <p style={{ color: 'var(--muted)', fontSize: 14 }}>This page is coming soon.</p>
-  </div>
-)
+const pageComponents = {
+  dashboard: Dashboard,
+  teachers: Teachers,
+  students: Students,
+  analytics: Analytics,
+  sessions: SessionLogs,
+  alerts: Alerts,
+  downloads: Downloads,
+}
+
+function ProtectedRoute({ isAuthenticated, children }) {
+  return isAuthenticated ? children : <Navigate to="/login" replace />
+}
 
 function AuthGate() {
-  const { pathname } = useLocation()
-  const navigate = useNavigate()
-  const [checking, setChecking] = useState(true)
+  const location = useLocation()
+  const [authChecked, setAuthChecked] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
     let active = true
-    async function checkToken() {
-      let token = null
+    const updateAuthentication = event => setIsAuthenticated(Boolean(event.detail))
+    window.addEventListener('nexclass-auth-change', updateAuthentication)
+
+    const checkAuth = async () => {
+      let electronToken = null
       try {
-        token = await window.electronAPI?.getToken?.()
+        electronToken = await window.electronAPI?.getToken?.()
       } catch {
-        token = null
+        // Browser storage remains available if Electron storage fails.
+      }
+      let browserToken = null
+      try {
+        browserToken = window.localStorage.getItem('nexclass_token')
+      } catch {
+        // Storage can be unavailable in restricted browser contexts.
       }
       if (!active) return
-
-      if (token && pathname === '/login') navigate('/dashboard', { replace: true })
-      else if (!token && pathname !== '/login') navigate('/login', { replace: true })
-      setChecking(false)
+      setIsAuthenticated(Boolean(electronToken || browserToken))
+      await new Promise(resolve => window.setTimeout(resolve, 800))
+      if (active) setAuthChecked(true)
     }
-    checkToken()
-    return () => { active = false }
-    // Check persisted authentication once, when the router mounts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    checkAuth()
+    return () => {
+      active = false
+      window.removeEventListener('nexclass-auth-change', updateAuthentication)
+    }
   }, [])
 
-  if (checking) {
-    return <div aria-label="Checking sign-in" style={{ minHeight: '100vh', background: 'var(--bg)' }} />
-  }
+  if (!authChecked) return <LoadingScreen />
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route element={<AppShell><Outlet /></AppShell>}>
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route element={<ProtectedRoute isAuthenticated={isAuthenticated}><AppShell><Outlet /></AppShell></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        {pages.map(([path, name]) => (
-          <Route
-            key={path}
-            path={path}
-            element={path === 'dashboard' ? <Dashboard /> : path === 'teachers' ? <Teachers /> : path === 'students' ? <Students /> : path === 'analytics' ? <Analytics /> : path === 'sessions' ? <SessionLogs /> : path === 'alerts' ? <Alerts /> : <PlaceholderPage name={name} />}
-          />
-        ))}
+        {pages.map(path => {
+          const Page = pageComponents[path]
+          return (
+            <Route key={path} path={path} element={
+              <div key={location.pathname} className="page-enter">
+                <Page />
+              </div>
+            } />
+          )
+        })}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
