@@ -9,6 +9,7 @@ import Students from './pages/Students'
 import Analytics from './pages/Analytics'
 import SessionLogs from './pages/SessionLogs'
 import Alerts from './pages/Alerts'
+import Downloads from './pages/Downloads'
 import Login from './pages/Login'
 
 const pages = [
@@ -68,7 +69,7 @@ function AuthGate() {
           <Route
             key={path}
             path={path}
-            element={path === 'dashboard' ? <Dashboard /> : path === 'teachers' ? <Teachers /> : path === 'students' ? <Students /> : path === 'analytics' ? <Analytics /> : path === 'sessions' ? <SessionLogs /> : path === 'alerts' ? <Alerts /> : <PlaceholderPage name={name} />}
+            element={path === 'dashboard' ? <Dashboard /> : path === 'teachers' ? <Teachers /> : path === 'students' ? <Students /> : path === 'analytics' ? <Analytics /> : path === 'sessions' ? <SessionLogs /> : path === 'alerts' ? <Alerts /> : path === 'downloads' ? <Downloads /> : <PlaceholderPage name={name} />}
           />
         ))}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
