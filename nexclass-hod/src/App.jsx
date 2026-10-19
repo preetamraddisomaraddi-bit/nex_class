@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import { ToastProvider } from './components/AlertToast'
 import { HODProvider } from './context/HODContext'
@@ -14,22 +14,14 @@ import Login from './pages/Login'
 import LoadingScreen from './components/LoadingScreen'
 
 const pages = [
-  ['dashboard', 'Dashboard'],
-  ['teachers', 'Teachers'],
-  ['students', 'Students'],
-  ['analytics', 'Analytics'],
-  ['sessions', 'Session Logs'],
-  ['alerts', 'Alerts'],
-  ['downloads', 'Downloads'],
+  'dashboard',
+  'teachers',
+  'students',
+  'analytics',
+  'sessions',
+  'alerts',
+  'downloads',
 ]
-
-const PlaceholderPage = ({ name }) => (
-  <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 40, textAlign: 'center', color: 'var(--text)', fontFamily: 'Inter, sans-serif' }}>
-    <div aria-hidden="true" style={{ fontSize: '2rem', marginBottom: 12 }}>🚧</div>
-    <h2 style={{ fontFamily: '"Plus Jakarta Sans", sans-serif', fontSize: '1.2rem', fontWeight: 700, marginBottom: 8 }}>{name}</h2>
-    <p style={{ color: 'var(--muted)', fontSize: 14 }}>This page is coming soon.</p>
-  </div>
-)
 
 const pageComponents = {
   dashboard: Dashboard,
@@ -62,7 +54,12 @@ function AuthGate() {
       } catch {
         // Browser storage remains available if Electron storage fails.
       }
-      const browserToken = window.localStorage.getItem('nexclass_token')
+      let browserToken = null
+      try {
+        browserToken = window.localStorage.getItem('nexclass_token')
+      } catch {
+        // Storage can be unavailable in restricted browser contexts.
+      }
       if (!active) return
       setIsAuthenticated(Boolean(electronToken || browserToken))
       await new Promise(resolve => window.setTimeout(resolve, 800))
@@ -83,7 +80,7 @@ function AuthGate() {
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route element={<ProtectedRoute isAuthenticated={isAuthenticated}><AppShell><Outlet /></AppShell></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        {pages.map(([path]) => {
+        {pages.map(path => {
           const Page = pageComponents[path]
           return (
             <Route key={path} path={path} element={
