@@ -9,6 +9,8 @@ const devUrl = 'http://localhost:5176'
 const appHtmlPath = path.resolve(__dirname, '../dist/index.html')
 const appFileUrl = pathToFileURL(appHtmlPath).href
 let mainWindow = null
+let serverInfo = null
+let closeServer = null
 
 app.setPath('sessionData', path.join(app.getPath('temp'), 'nexclass-hod-session'))
 
@@ -103,6 +105,7 @@ function createWindow() {
 }
 
 ipcMain.handle('get-version', () => app.getVersion())
+ipcMain.handle('get-server-info', () => serverInfo ? { ip: serverInfo.ip, port: serverInfo.port } : null)
 ipcMain.handle('store-token', (_event, token) => store.set('token', token))
 ipcMain.handle('get-token', () => store.get('token'))
 ipcMain.handle('clear-token', () => store.delete('token'))
@@ -113,7 +116,16 @@ ipcMain.handle('save-file', async (_event, { filename, data, type }) => {
   return true
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  try {
+    // Load after Electron is ready so the database can use app.getPath('userData').
+    const { startServer } = require('../server/index')
+    serverInfo = await startServer()
+    closeServer = serverInfo.close
+  } catch (error) {
+    console.error('Failed to start NexClass HOD server:', error)
+    dialog.showErrorBox('Server startup failed', `The local department server could not start.\n\n${error.message}`)
+  }
   buildApplicationMenu()
   createWindow()
   app.on('activate', () => {
@@ -121,6 +133,15 @@ app.whenReady().then(() => {
   })
 })
 
+app.on('before-quit', () => {
+  if (closeServer) {
+    const close = closeServer
+    closeServer = null
+    close().catch((error) => console.error('Server shutdown error:', error))
+  }
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
