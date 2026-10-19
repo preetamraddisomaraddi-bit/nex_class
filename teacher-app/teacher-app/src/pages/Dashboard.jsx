@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAPI } from '../api.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const teacher = JSON.parse(localStorage.getItem('teacher') || '{}')
+  const { teacher, logout } = useAuth()
   const [rooms, setRooms] = useState([])
   const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ subject: teacher.subject || '', class_name: '', topic: '' })
+  const [form, setForm] = useState({ subject: teacher.subject || '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -16,8 +17,8 @@ export default function Dashboard() {
   async function loadRooms() {
     try {
       const api = getAPI()
-      const { data } = await api.get(`/rooms/teacher/${teacher.id}`)
-      setRooms(data.rooms || [])
+      const { data } = await api.get('/api/rooms')
+      setRooms(Array.isArray(data) ? data : data.rooms || [])
     } catch {}
   }
 
@@ -26,16 +27,18 @@ export default function Dashboard() {
     setLoading(true); setError('')
     try {
       const api = getAPI()
-      const { data } = await api.post('/rooms/create', { teacher_id: teacher.id, ...form })
-      navigate(`/classroom/${data.room.code}`)
+      const { data } = await api.post('/api/rooms', {
+        subject: form.subject,
+        semester: Number(teacher.semester)
+      })
+      navigate(`/classroom/${data.code}`)
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create room')
     } finally { setLoading(false) }
   }
 
-  function logout() {
-    localStorage.removeItem('teacher')
-    localStorage.removeItem('token')
+  function signOut() {
+    logout()
     navigate('/login')
   }
 
@@ -56,7 +59,7 @@ export default function Dashboard() {
             <p className="text-sm font-semibold text-slate-900 leading-none">{teacher.name}</p>
             <p className="text-xs text-slate-500 mt-1">{teacher.subject || 'Instructor'}</p>
           </div>
-          <button onClick={logout} className="text-slate-500 hover:text-red-600 text-sm font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
+          <button onClick={signOut} className="text-slate-500 hover:text-red-600 text-sm font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
             Sign out
           </button>
         </div>
@@ -110,8 +113,8 @@ export default function Dashboard() {
                       {room.subject?.slice(0,2).toUpperCase() || 'CS'}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-900 text-sm leading-snug">{room.subject} — {room.class_name}</p>
-                      <p className="text-slate-500 text-xs mt-1">{room.topic || 'No topic set'} · {new Date(room.started_at).toLocaleDateString()}</p>
+                      <p className="font-bold text-slate-900 text-sm leading-snug">{room.subject} — {room.class_name || `Semester ${room.semester}`}</p>
+                      <p className="text-slate-500 text-xs mt-1">{room.topic || 'Session'} · {new Date(room.created_at || room.started_at).toLocaleDateString()}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -149,16 +152,9 @@ export default function Dashboard() {
                   placeholder="Computer Science" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Class / Section</label>
-                <input value={form.class_name} onChange={e => setForm(f => ({...f, class_name: e.target.value}))} required
-                  className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none transition-colors"
-                  placeholder="CSE 3A" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Today's Topic</label>
-                <input value={form.topic} onChange={e => setForm(f => ({...f, topic: e.target.value}))}
-                  className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-indigo-500 rounded-lg px-4 py-2.5 text-sm text-slate-900 focus:outline-none transition-colors"
-                  placeholder="Introduction to Arrays" />
+                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Assigned Semester</label>
+                <input value={teacher.semester ? `Semester ${teacher.semester}` : 'No semester assigned'} readOnly
+                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-500 cursor-not-allowed" />
               </div>
               {error && <p className="text-red-500 text-sm bg-red-50 border border-red-100 rounded-lg py-2 px-3">{error}</p>}
               <div className="flex gap-3 pt-2">
@@ -178,3 +174,4 @@ export default function Dashboard() {
     </div>
   )
 }
+

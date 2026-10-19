@@ -1,13 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getAPI, getSocket } from '../api.js'
+import { getRoomDetail, endRoom, createExam, getExam, getExamScores } from '../api.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import {
+  emitSessionCreated, emitSessionEnded, emitNotePushed,
+  emitCodeBroadcast, emitExamLaunched, emitBoardDraw,
+  emitBoardClear, getSocket
+} from '../socket.js'
 
 const TABS = ['Board', 'Notes', 'Code', 'Attendance', 'Exam', 'Submissions']
 
 export default function Classroom() {
   const { roomCode } = useParams()
   const navigate = useNavigate()
-  const teacher = JSON.parse(localStorage.getItem('teacher') || '{}')
+  const { teacher } = useAuth()
   const [room, setRoom] = useState(null)
   const [tab, setTab] = useState('Board')
   const [students, setStudents] = useState([])
@@ -104,9 +110,9 @@ export default function Classroom() {
 
   useEffect(() => {
     loadRoom()
-    socket.emit('room:join', { room_code: roomCode, user: { ...teacher, role: 'teacher' } })
+    socket?.emit('room:join', { room_code: roomCode, user: { ...teacher, role: 'teacher' } })
     
-    socket.on('room:user_joined', ({ user, socketId }) => {
+    socket?.on('room:user_joined', ({ user, socketId }) => {
       if (user.role === 'student') {
         setStudents(prev => {
           if (prev.find(s => s.id === user.id)) return prev
@@ -115,7 +121,7 @@ export default function Classroom() {
       }
     })
 
-    socket.on('room:user_left', ({ user, socketId }) => {
+    socket?.on('room:user_left', ({ user, socketId }) => {
       if (socketId && peersRef.current[socketId]) {
         peersRef.current[socketId].close()
         delete peersRef.current[socketId]
@@ -123,12 +129,23 @@ export default function Classroom() {
       setStudents(prev => prev.filter(s => s.id !== user.id))
     })
 
-    socket.on('screen:request', handleScreenRequest)
-    socket.on('screen:answer', handleScreenAnswer)
-    socket.on('screen:ice-candidate', handleScreenIceCandidate)
+    socket?.on('screen:request', handleScreenRequest)
+    socket?.on('screen:answer', handleScreenAnswer)
+    socket?.on('screen:ice-candidate', handleScreenIceCandidate)
+
+    const handleStudentJoined = data => setStudents(prev =>
+      prev.some(student => student.id === data.student_id)
+        ? prev
+        : [...prev, { ...data, id: data.student_id }]
+    )
+    const handleStudentOffline = data => setStudents(prev =>
+      prev.filter(student => student.id !== data.student_id)
+    )
+    socket?.on('student:joined', handleStudentJoined)
+    socket?.on('student:offline', handleStudentOffline)
 
     // Distraction Filter status listener
-    socket.on('student:status-update', ({ student_id, socket_id, is_focused }) => {
+    socket?.on('student:status-update', ({ student_id, socket_id, is_focused }) => {
       setStudents(prev => prev.map(s => {
         if (s.id === student_id) {
           return { ...s, socket_id, is_focused, last_seen: Date.now() };
@@ -137,7 +154,7 @@ export default function Classroom() {
       }));
     });
 
-    socket.on('student:force-close-alert', ({ student_name, timestamp }) => {
+    socket?.on('student:force-close-alert', ({ student_name, timestamp }) => {
       alert(`🚨 WARNING: Student "${student_name}" exited Focus Mode (window closed) at ${new Date(timestamp).toLocaleTimeString()}!`);
     });
 
@@ -152,6 +169,14 @@ export default function Classroom() {
       }));
     }, 4000);
 
+    const handleHodAlert = event => {
+      const { message, type } = event.detail || {}
+      alert(`📨 Message from HOD (${type || 'reminder'}): ${message || ''}`)
+    }
+    window.addEventListener('hod-alert', handleHodAlert)
+    const handleApproval = event => alert(event.detail?.message || 'Your account has been approved by the HOD.')
+    window.addEventListener('teacher-account-approved', handleApproval)
+
     return () => {
       socket.off('room:user_joined')
       socket.off('room:user_left')
@@ -160,26 +185,49 @@ export default function Classroom() {
       socket.off('screen:ice-candidate')
       socket.off('student:status-update')
       socket.off('student:force-close-alert')
+      socket?.off('student:joined', handleStudentJoined)
+      socket?.off('student:offline', handleStudentOffline)
       clearInterval(interval)
+      window.removeEventListener('hod-alert', handleHodAlert)
+      window.removeEventListener('teacher-account-approved', handleApproval)
       stopScreenShare()
     }
   }, [])
 
+  useEffect(() => {
+    if (!room || !roomCode || !teacher) return
+    emitSessionCreated({
+      room_code: roomCode,
+      subject: room.subject || teacher.subject,
+      teacher_id: teacher.id,
+      semester: room.semester || teacher.semester
+    })
+  }, [room, roomCode, teacher])
+
   async function loadRoom() {
     try {
-      const { data } = await getAPI().get(`/rooms/${roomCode}`)
-      setRoom(data.room)
-      const { data: sd } = await getAPI().get(`/rooms/${roomCode}/students`)
-      setStudents(sd.students || [])
+      const { data } = await getRoomDetail(roomCode)
+      const roomData = data.room || data
+      setRoom(roomData)
+      setStudents((roomData.attendance || []).map(record => ({
+        ...record,
+        id: record.student_id,
+        is_focused: true
+      })))
     } catch { navigate('/dashboard') }
   }
 
   async function endClass() {
     if (!confirm('End this class session?')) return
     stopScreenShare()
-    socket.emit('session:end', { room_code: roomCode })
-    await getAPI().patch(`/rooms/${roomCode}/end`)
-    socket.emit('room:leave', { room_code: roomCode })
+    try {
+      await endRoom(roomCode)
+      emitSessionEnded({ room_code: roomCode })
+      socket?.emit('room:leave', { room_code: roomCode })
+    } catch (error) {
+      alert(error.response?.data?.error || 'Could not end this session.')
+      return
+    }
     navigate('/dashboard')
   }
 
@@ -545,7 +593,7 @@ function BoardTab({ roomCode, socket }) {
     ctx.moveTo(lastPos.current.x, lastPos.current.y)
     ctx.lineTo(pos.x, pos.y)
     ctx.stroke()
-    socket.emit('board:draw', {
+    emitBoardDraw({
       room_code: roomCode,
       drawData: { from: lastPos.current, to: pos, color: tool === 'eraser' ? '#0f172a' : color, size: tool === 'eraser' ? 24 : size }
     })
@@ -556,7 +604,7 @@ function BoardTab({ roomCode, socket }) {
 
   function clearBoard() {
     ctxRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    socket.emit('board:clear', { room_code: roomCode })
+    emitBoardClear({ room_code: roomCode })
   }
 
   const colors = ['#ffffff', '#f87171', '#fb923c', '#facc15', '#4ade80', '#60a5fa', '#a78bfa', '#f472b6']
@@ -602,20 +650,21 @@ function NotesTab({ roomCode, room }) {
   const [title, setTitle] = useState('')
   const socket = getSocket()
 
-  useEffect(() => { if (room) loadNotes() }, [room])
-
-  async function loadNotes() {
-    try {
-      const { data } = await getAPI().get(`/notes/room/${room.id}`)
-      setNotes(data.notes || [])
-    } catch {}
-  }
+  useEffect(() => {
+    if (room) setNotes(room.notes || [])
+    const handleNote = note => {
+      if (note.room_code !== roomCode) return
+      setNotes(prev => prev.some(item => item.id === note.id) ? prev : [...prev, note])
+    }
+    socket?.on('note:received', handleNote)
+    return () => socket?.off('note:received', handleNote)
+  }, [room, roomCode, socket])
 
   async function pushNote() {
     if (!content.trim()) return
-    socket.emit('note:push', { room_code: roomCode, note: { title: title || 'Class Note', content } })
+    const noteContent = title.trim() ? `${title.trim()}\n${content.trim()}` : content.trim()
+    emitNotePushed({ room_code: roomCode, content: noteContent, pushed_at: new Date().toISOString() })
     setContent(''); setTitle('')
-    setTimeout(loadNotes, 500)
   }
 
   return (
@@ -631,7 +680,7 @@ function NotesTab({ roomCode, room }) {
           <div className="space-y-3">
             {notes.map(n => (
               <div key={n.id} className="bg-[#1e293b] rounded-xl p-4 border border-slate-700/40">
-                <p className="font-medium text-white text-sm mb-1">{n.title}</p>
+                <p className="font-medium text-white text-sm mb-1">{n.title || 'Class Note'}</p>
                 <p className="text-slate-300 text-sm whitespace-pre-wrap">{n.content}</p>
                 <p className="text-slate-500 text-xs mt-2">{new Date(n.pushed_at).toLocaleTimeString()}</p>
               </div>
@@ -663,7 +712,7 @@ function CodeTab({ roomCode, socket }) {
   const languages = ['python', 'javascript', 'java', 'c', 'cpp']
 
   function broadcast() {
-    socket.emit('code:broadcast', { room_code: roomCode, code, language })
+    emitCodeBroadcast({ room_code: roomCode, code, language })
     alert('Code broadcast to all students!')
   }
 
@@ -692,15 +741,11 @@ function AttendanceTab({ roomCode, room, students }) {
   useEffect(() => { if (room) loadAttendance() }, [room, students])
 
   async function loadAttendance() {
-    try {
-      const { data } = await getAPI().get(`/attendance/room/${room.id}`)
-      setRecords(data.records || [])
-    } catch {}
+    setRecords(room.attendance || [])
   }
 
   async function updateStatus(student_id, status) {
-    await getAPI().patch('/attendance/update', { student_id, room_id: room.id, status })
-    loadAttendance()
+    alert(`Attendance is recorded when students join. Manual ${status} updates are not supported by the HOD server.`)
   }
 
   function exportCSV() {
@@ -709,7 +754,7 @@ function AttendanceTab({ roomCode, room, students }) {
     const headers = ['Student Name', 'Roll Number', 'Class Section', 'Status', 'Joined Time']
     const rows = records.map(r => [
       r.name,
-      r.roll_no,
+      r.usn || r.roll_no,
       r.class_section,
       r.status,
       r.joined_at ? new Date(r.joined_at).toLocaleString() : ''
@@ -778,7 +823,7 @@ function AttendanceTab({ roomCode, room, students }) {
                         </span>
                       )}
                     </div>
-                    <p className="text-slate-400 text-xs">Roll: {r.roll_no} · {r.class_section}</p>
+                    <p className="text-slate-400 text-xs">USN: {r.usn || r.roll_no || '—'} · {r.status}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -816,10 +861,16 @@ function ExamTab({ roomCode, room, socket }) {
   useEffect(() => { if (room) loadExams() }, [room])
 
   async function loadExams() {
-    try {
-      const { data } = await getAPI().get(`/exam/room/${room.id}`)
-      setExams(data.exams || [])
-    } catch {}
+    const examSummaries = room.exams || []
+    const details = await Promise.all(examSummaries.map(async summary => {
+      try {
+        const { data } = await getExam(summary.id)
+        return { ...data, questions: data.questions_json || [], status: summary.launched_at ? 'active' : 'draft' }
+      } catch {
+        return { ...summary, status: summary.launched_at ? 'active' : 'draft' }
+      }
+    }))
+    setExams(details)
   }
 
   function addQuestion() {
@@ -829,7 +880,7 @@ function ExamTab({ roomCode, room, socket }) {
   async function createExam() {
     if (!title || questions.some(q => !q.text)) return alert('Fill all question fields')
     try {
-      await getAPI().post('/exam/create', { room_id: room.id, title, duration_mins: duration, questions })
+      await createExam({ room_id: room.id, title, duration_mins: Number(duration), questions_json: questions })
       setCreating(false); setTitle(''); setDuration(30)
       setQuestions([{ type: 'mcq', text: '', options: ['', '', '', ''], correct_index: 0 }])
       loadExams()
@@ -837,15 +888,19 @@ function ExamTab({ roomCode, room, socket }) {
   }
 
   function launch(exam) {
-    socket.emit('exam:launch', { room_code: roomCode, exam })
+    emitExamLaunched({ room_code: roomCode, exam_id: exam.id, title: exam.title, duration: exam.duration_mins })
+    setExams(prev => prev.map(item => item.id === exam.id ? { ...item, status: 'active' } : item))
     alert(`Exam "${exam.title}" launched to all students!`)
-    loadExams()
   }
 
   async function viewResults(exam) {
     try {
-      const { data } = await getAPI().get(`/exam/${exam.id}/results`)
-      setResultsList(data.results || [])
+      const { data } = await getExamScores(exam.id)
+      setResultsList((Array.isArray(data) ? data : data.results || []).map(result => ({
+        ...result,
+        percentage: result.total ? Math.round(result.score / result.total * 100) : 0,
+        roll_no: result.usn || result.roll_no
+      })))
       setSelectedResults(exam)
     } catch {
       alert('Failed to load exam results.')
@@ -1035,20 +1090,32 @@ function ExamTab({ roomCode, room, socket }) {
 function SubmissionsTab({ roomCode, room }) {
   const [submissions, setSubmissions] = useState([])
   const [selected, setSelected] = useState(null)
+  const socket = getSocket()
 
-  useEffect(() => { if (room) load() }, [room])
-
-  async function load() {
-    try {
-      const { data } = await getAPI().get(`/code/room/${room.id}`)
-      setSubmissions(data.submissions || [])
-    } catch {}
-  }
+  useEffect(() => {
+    if (!room) return
+    const addSubmission = submission => {
+      if (submission.room_code !== roomCode) return
+      const item = {
+        ...submission,
+        id: submission.id || `${submission.student_id}-${submission.submitted_at || Date.now()}`,
+        name: submission.name || submission.student_name || `Student ${submission.student_id || ''}`,
+        submitted_at: submission.submitted_at || new Date().toISOString()
+      }
+      setSubmissions(prev => prev.some(existing => existing.id === item.id) ? prev : [item, ...prev])
+    }
+    socket?.on('code:submission', addSubmission)
+    socket?.on('exam:submission', addSubmission)
+    return () => {
+      socket?.off('code:submission', addSubmission)
+      socket?.off('exam:submission', addSubmission)
+    }
+  }, [room, roomCode, socket])
 
   return (
     <div className="h-full flex overflow-hidden">
       <div className="w-72 border-r border-slate-700/50 overflow-y-auto p-4">
-        <h3 className="font-semibold text-white mb-3 text-sm">Code Submissions ({submissions.length})</h3>
+        <h3 className="font-semibold text-white mb-3 text-sm">Live Submissions ({submissions.length})</h3>
         {submissions.length === 0 ? (
           <p className="text-slate-500 text-sm text-center mt-8">No submissions yet</p>
         ) : (
@@ -1063,7 +1130,7 @@ function SubmissionsTab({ roomCode, room }) {
                   </div>
                   <p className="font-medium text-white text-sm">{s.name}</p>
                 </div>
-                <p className="text-slate-400 text-xs">{s.language} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
+                <p className="text-slate-400 text-xs">{s.language || 'Exam'} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
               </button>
             ))}
           </div>
@@ -1077,7 +1144,7 @@ function SubmissionsTab({ roomCode, room }) {
                 {selected.name?.slice(0,1)}
               </div>
               <div>
-                <p className="font-semibold text-white">{selected.name} — Roll: {selected.roll_no}</p>
+                <p className="font-semibold text-white">{selected.name} — USN: {selected.usn || selected.roll_no || '—'}</p>
                 <p className="text-slate-400 text-sm">{selected.language} · {new Date(selected.submitted_at).toLocaleString()}</p>
               </div>
             </div>
@@ -1101,3 +1168,4 @@ function SubmissionsTab({ roomCode, room }) {
     </div>
   )
 }
+
