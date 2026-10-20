@@ -70,8 +70,8 @@ export default function Login() {
   const fieldClass = 'w-full bg-[#0f172a] border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500'
 
   return (
-    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 select-none text-white">
-      <div className="w-full max-w-md">
+    <div className="h-screen overflow-y-auto bg-[#0f172a] select-none text-white">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center p-6">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 mb-4 shadow-lg shadow-indigo-600/20 text-white text-3xl">👨‍🎓</div>
           <h1 className="text-3xl font-bold text-white">NexClass</h1>
