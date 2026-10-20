@@ -78,7 +78,7 @@ function CountPill({ children, tone = 'amber' }) {
 export default function Dashboard() {
   const navigate = useNavigate()
   const showToast = useToast()
-  const { teachers, approveTeacher, rejectTeacher } = useHOD()
+  const { teachers, approveTeacher, rejectTeacher, realtime } = useHOD()
   const atRiskStudents = useMemo(() => getAtRiskStudents(), [])
   const deptAttendance = getDeptAvgAttendance()
   const deptAvgScore = getDeptAvgScore()
@@ -133,6 +133,7 @@ export default function Dashboard() {
       <style>{`
         .dashboard-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
         .dashboard-main-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+        .dashboard-live-grid { grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr); }
         .dashboard-chart-scroll { overflow-x: auto; }
         .dashboard-chart-bars { min-width: 560px; }
         .dashboard-teacher-row:last-child, .dashboard-risk-row:last-child, .dashboard-session-row:last-child { border-bottom: 0 !important; }
@@ -140,6 +141,7 @@ export default function Dashboard() {
         @media (max-width: 1050px) { .dashboard-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 760px) {
           .dashboard-main-grid { grid-template-columns: 1fr; }
+          .dashboard-live-grid { grid-template-columns: 1fr !important; }
           .dashboard-greeting { align-items: flex-start !important; flex-direction: column; }
           .dashboard-date { text-align: left !important; }
         }
@@ -206,6 +208,48 @@ export default function Dashboard() {
           subtitle={deptAttendance >= 75 ? 'Above minimum requirement' : 'Below 75% threshold'}
           subtitleColor={deptAttendance >= 75 ? 'var(--green)' : 'var(--red)'}
         />
+      </section>
+
+      <section style={panelStyle} aria-label="Live department activity">
+        <SectionHeader
+          title="🔴 Live Department Activity"
+          trailing={(
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: realtime.connected ? 'var(--green)' : 'var(--muted)', fontSize: 11, fontWeight: 700 }}>
+              <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: '50%', background: realtime.connected ? 'var(--green)' : 'var(--muted2)' }} />
+              {realtime.connected ? 'Connected' : 'Connecting'}
+            </span>
+          )}
+        />
+        <div className="dashboard-live-grid" style={{ display: 'grid', gap: 20, padding: '16px 20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--green-light)' }}>
+              <div style={{ fontFamily: headingFont, fontSize: 22, fontWeight: 800, color: 'var(--green)' }}>{realtime.onlineTeachers.length}</div>
+              <div style={{ marginTop: 2, fontSize: 11, color: 'var(--muted)' }}>Teachers online</div>
+            </div>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--blue-light)' }}>
+              <div style={{ fontFamily: headingFont, fontSize: 22, fontWeight: 800, color: 'var(--blue)' }}>{realtime.activeRooms.length}</div>
+              <div style={{ marginTop: 2, fontSize: 11, color: 'var(--muted)' }}>Active sessions</div>
+            </div>
+            <div style={{ gridColumn: '1 / -1', fontSize: 12, lineHeight: 1.5, color: realtime.error ? 'var(--amber)' : 'var(--muted)' }}>
+              {realtime.connected
+                ? realtime.activeRooms.length
+                  ? realtime.activeRooms.map(room => <div key={room.room_code}>{room.subject} · {room.room_code} · {(room.students || []).length} students</div>)
+                  : 'No live sessions at the moment.'
+                : realtime.error || 'Waiting for the HOD server connection.'}
+            </div>
+          </div>
+          <div>
+            <div style={{ marginBottom: 8, fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent live events</div>
+            {realtime.recentEvents.length === 0 ? (
+              <div style={{ padding: '8px 0', fontSize: 13, color: 'var(--muted)' }}>Live teacher, student and session activity will appear here.</div>
+            ) : realtime.recentEvents.slice(0, 5).map(event => (
+              <div key={event.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                <span style={{ color: 'var(--text2)' }}>{event.message}</span>
+                <time style={{ color: 'var(--muted2)', whiteSpace: 'nowrap' }} dateTime={event.at}>{new Date(event.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</time>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="dashboard-main-grid" aria-label="Department activity">
