@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiRequest } from '../api'
 
 const features = [
   'Approve & manage department teachers',
@@ -39,27 +40,23 @@ export default function Login() {
 
     setLoading(true)
     setError('')
-    await new Promise(resolve => window.setTimeout(resolve, 800))
-
-    if (employeeId.trim() === 'BIT-HOD-001' && password === 'hod123') {
-      try {
-        const token = 'nexclass-hod-token'
-        await window.electronAPI?.storeToken?.(token)
-        window.localStorage.setItem('nexclass_token', token)
-        window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
-        navigate('/dashboard', { replace: true })
-      } catch {
-        setError('Unable to sign in right now. Please try again.')
-        triggerShake()
-        setLoading(false)
-      }
-      return
+    try {
+      const result = await apiRequest('/auth/hod/login', {
+        method: 'POST',
+        auth: false,
+        body: { employee_id: employeeId.trim(), password },
+      })
+      await window.electronAPI?.storeToken?.(result.token)
+      window.localStorage.setItem('nexclass_token', result.token)
+      window.localStorage.setItem('nexclass_hod_data', JSON.stringify(result.hod))
+      window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
+      navigate('/dashboard', { replace: true })
+    } catch (loginError) {
+      setError(loginError.message || 'Unable to sign in. Check your credentials and confirm the HOD server is running.')
+      setPassword('')
+      triggerShake()
+      setLoading(false)
     }
-
-    setError('Invalid Employee ID or Password')
-    setPassword('')
-    triggerShake()
-    setLoading(false)
   }
 
   function handleKeyDown(event) {
