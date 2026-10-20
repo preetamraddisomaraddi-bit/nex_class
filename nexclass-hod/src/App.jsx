@@ -12,6 +12,7 @@ import Alerts from './pages/Alerts'
 import Downloads from './pages/Downloads'
 import Login from './pages/Login'
 import LoadingScreen from './components/LoadingScreen'
+import { apiRequest } from './api'
 
 const pages = [
   'dashboard',
@@ -61,7 +62,23 @@ function AuthGate() {
         // Storage can be unavailable in restricted browser contexts.
       }
       if (!active) return
-      setIsAuthenticated(Boolean(electronToken || browserToken))
+      const token = browserToken || electronToken
+      if (token) {
+        try {
+          if (!browserToken) window.localStorage.setItem('nexclass_token', token)
+          await apiRequest('/teachers')
+          if (!active) return
+          setIsAuthenticated(true)
+          window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
+        } catch {
+          await window.electronAPI?.clearToken?.()
+          window.localStorage.removeItem('nexclass_token')
+          if (!active) return
+          setIsAuthenticated(false)
+        }
+      } else {
+        setIsAuthenticated(false)
+      }
       await new Promise(resolve => window.setTimeout(resolve, 800))
       if (active) setAuthChecked(true)
     }
