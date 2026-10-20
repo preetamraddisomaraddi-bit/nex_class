@@ -57,9 +57,11 @@ function EmptyState({ icon, title, description }) {
 function TeacherDetail({ teacher }) {
   if (!teacher) return null
 
-  const sessionHistory = (teacher.sessions?.length
-    ? teacher.sessions
-    : SESSION_LOGS.filter(session => session.teacherId === teacher.id)
+  const sessionHistory = (teacher.fromServer
+    ? (teacher.sessions || [])
+    : (teacher.sessions?.length
+      ? teacher.sessions
+      : SESSION_LOGS.filter(session => session.teacherId === teacher.id))
   ).slice(0, 5)
   const exams = teacher.examsConducted || []
   const studentsTaught = teacher.totalStudentsTaught ?? STUDENTS.filter(student => student.semester === teacher.semester).length
@@ -180,19 +182,23 @@ export default function Teachers() {
     setAlertMessage('')
     setAlertType('reminder')
   }
-  const reviewTeacher = (teacher, action) => {
+  const reviewTeacher = async (teacher, action) => {
     const isApprove = action === 'approve'
     const confirmation = isApprove
       ? `Approve ${teacher.name} as a teacher?`
       : `Reject ${teacher.name}? This cannot be undone.`
     if (!window.confirm(confirmation)) return
-    if (isApprove) {
-      approveTeacher(teacher.id)
-      showToast(`${teacher.name} approved successfully ✅`, 'success')
-      setActiveTab('approved')
-    } else {
-      rejectTeacher(teacher.id)
-      showToast(`${teacher.name} has been rejected`, 'warning')
+    try {
+      if (isApprove) {
+        await approveTeacher(teacher.id)
+        showToast(`${teacher.name} approved successfully ✅`, 'success')
+        setActiveTab('approved')
+      } else {
+        await rejectTeacher(teacher.id)
+        showToast(`${teacher.name} has been rejected`, 'warning')
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update this teacher.', 'error')
     }
   }
   const sendAlert = () => {
