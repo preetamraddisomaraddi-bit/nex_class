@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getAPI, getSocket } from '../api.js'
+import { getAPI, getExam, submitScore } from '../api.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { getSocket, joinRoom as joinSocketRoom, startHeartbeat, stopHeartbeat, leaveRoom, emitCodeSubmitted, emitExamSubmitted, emitForceClose } from '../socket.js'
 import { jsPDF } from 'jspdf'
 
 const TABS = ['Board', 'Code', 'Notes', 'Exam']
@@ -8,7 +10,8 @@ const TABS = ['Board', 'Code', 'Notes', 'Exam']
 export default function Classroom() {
   const { roomCode } = useParams()
   const navigate = useNavigate()
-  const student = JSON.parse(localStorage.getItem('student') || '{}')
+  const { student } = useAuth()
+  const [launchedExam, setLaunchedExam] = useState(null)
   const [room, setRoom] = useState(null)
   const [tab, setTab] = useState('Board')
   const [activeScreenShare, setActiveScreenShare] = useState(false)
@@ -55,7 +58,14 @@ export default function Classroom() {
       window.electronAPI.enterFocusMode()
     }
 
-    socket.emit('room:join', { room_code: roomCode, user: { ...student, role: 'student' } })
+    joinSocketRoom(student, roomCode)
+    startHeartbeat(student, roomCode, 'focused')
+
+    const handleExamStarted = data => {
+      setLaunchedExam(data)
+      setTab('Exam')
+    }
+    socket.on('exam:started', handleExamStarted)
 
     const handleScreenStarted = ({ from }) => {
       console.log('[WebRTC] Screen sharing started by:', from)
@@ -170,20 +180,19 @@ export default function Classroom() {
 
     // Periodic Heartbeat Status Updates
     const heartbeat = setInterval(() => {
-      socket.emit('student:status', {
+      socket.emit('student:heartbeat', {
         room_code: roomCode,
         student_id: student.id,
-        is_focused: document.hasFocus()
+        name: student.name,
+        status: document.hasFocus() ? 'focused' : 'unfocused',
+        timestamp: new Date().toISOString()
       })
-    }, 3000)
+    }, 30000)
 
     // Window force-close IPC trigger from main process
     if (window.electronAPI) {
       window.electronAPI.onFocusModeForceClosed(() => {
-        socket.emit('student:force-close', {
-          room_code: roomCode,
-          student_name: student.name
-        })
+        emitForceClose({ room_code: roomCode, name: student.name, usn: student.usn })
       })
     }
 
@@ -192,7 +201,9 @@ export default function Classroom() {
         window.electronAPI.exitFocusMode()
       }
       clearInterval(heartbeat)
-      socket.emit('room:leave', { room_code: roomCode })
+      stopHeartbeat()
+      leaveRoom(roomCode)
+      socket.off('exam:started', handleExamStarted)
       socket.off('screen:started', handleScreenStarted)
       socket.off('screen:stopped', handleScreenStopped)
       socket.off('screen:offer', handleScreenOfferEvent)
@@ -209,10 +220,9 @@ export default function Classroom() {
   async function loadRoom() {
     try {
       const { data } = await getAPI().get(`/rooms/${roomCode}`)
-      setRoom(data.room)
-      
-      const { data: pdfData } = await getAPI().get(`/pdfs/room/${data.room.id}`)
-      setReceivedPDFs(pdfData.pdfs || [])
+      const roomData = data.room || data
+      setRoom(roomData)
+      setReceivedPDFs([])
     } catch (err) {
       console.error('[Student Classroom] load error:', err)
       navigate('/dashboard')
@@ -353,7 +363,7 @@ export default function Classroom() {
         )}
         {tab === 'Code' && <CodeTab roomCode={roomCode} socket={socket} student={student} room={room} />}
         {tab === 'Notes' && <NotesTab room={room} receivedPDFs={receivedPDFs} handleViewPDF={handleViewPDF} handleDownloadPDF={handleDownloadPDF} />}
-        {tab === 'Exam' && <ExamTab roomCode={roomCode} socket={socket} student={student} room={room} />}
+        {tab === 'Exam' && <ExamTab roomCode={roomCode} socket={socket} student={student} room={room} launchedExam={launchedExam} />}
       </div>
     </div>
   )
@@ -431,8 +441,8 @@ function CodeTab({ roomCode, socket, student, room }) {
   }
 
   useEffect(() => {
-    socket.on('code:broadcast', handleBroadcast)
-    return () => { socket.off('code:broadcast') }
+    socket.on('code:received', handleBroadcast)
+    return () => { socket.off('code:received') }
   }, [])
 
   function handleBroadcast({ code, language }) {
@@ -473,16 +483,11 @@ function CodeTab({ roomCode, socket, student, room }) {
     if (!room) return
     setSubmitting(true)
     try {
-      await getAPI().post('/code/submit', {
-        student_id: student.id,
-        room_id: room.id,
-        code,
-        language,
-        output
-      })
-      socket.emit('code:submit', {
+      emitCodeSubmitted({
         room_code: roomCode,
-        student,
+        student_id: student.id,
+        name: student.name,
+        usn: student.usn,
         code,
         language,
         output
@@ -571,26 +576,15 @@ function NotesTab({ room, receivedPDFs, handleViewPDF, handleDownloadPDF }) {
   const socket = getSocket()
 
   useEffect(() => {
-    if (room) {
-      loadNotes()
-      socket.on('note:received', handleNoteReceived)
+    if (room) setNotes(room.notes || [])
+    const handleNoteReceived = note => {
+      if (note.room_code && note.room_code !== room?.code) return
+      const normalized = { ...note, title: note.title || 'Class Note' }
+      setNotes(prev => prev.some(item => item.id === normalized.id) ? prev : [...prev, normalized])
     }
-    return () => { socket.off('note:received') }
-  }, [room])
-
-  async function loadNotes() {
-    try {
-      const { data } = await getAPI().get(`/notes/room/${room.id}`)
-      setNotes(data.notes || [])
-    } catch {}
-  }
-
-  function handleNoteReceived({ note }) {
-    setNotes(prev => {
-      if (prev.find(n => n.id === note.id)) return prev
-      return [...prev, note]
-    })
-  }
+    socket.on('note:received', handleNoteReceived)
+    return () => socket.off('note:received', handleNoteReceived)
+  }, [room, socket])
 
   function downloadPDF(note) {
     const doc = new jsPDF()
@@ -700,7 +694,7 @@ function NotesTab({ room, receivedPDFs, handleViewPDF, handleDownloadPDF }) {
 }
 
 // ─── MCQ EXAM CLIENT ────────────────────────────────────────
-function ExamTab({ roomCode, socket, student, room }) {
+function ExamTab({ roomCode, socket, student, room, launchedExam }) {
   const [exam, setExam] = useState(null)
   const [answers, setAnswers] = useState({})
   const [timeLeft, setTimeLeft] = useState(0)
@@ -715,36 +709,47 @@ function ExamTab({ roomCode, socket, student, room }) {
 
   useEffect(() => {
     loadActiveExam()
-    const onLaunch = ({ exam: launched }) => initializeExam(launched)
-    const onEnd = ({ exam_id }) => {
-      const current = latestRef.current
-      if (current.exam?.id === exam_id && !current.submitted) autoSubmit()
+    const onLaunch = payload => {
+      const launched = payload.exam || payload
+      const id = launched.id || launched.exam_id
+      if (Array.isArray(launched.questions) || Array.isArray(launched.questions_json)) {
+        initializeExam({ ...launched, id, questions: launched.questions || launched.questions_json })
+      } else if (id) {
+        getExam(id).then(({ data }) => initializeExam({
+          ...data,
+          id: data.id || id,
+          questions: data.questions_json || data.questions || []
+        })).catch(() => {})
+      }
     }
-    socket.on('exam:launched', onLaunch)
-    socket.on('exam:ended', onEnd)
+    if (launchedExam) onLaunch(launchedExam)
+    socket.on('exam:started', onLaunch)
     return () => {
-      socket.off('exam:launched', onLaunch)
-      socket.off('exam:ended', onEnd)
+      socket.off('exam:started', onLaunch)
       clearInterval(timerRef.current)
     }
-  }, [room?.id])
+  }, [room?.id, launchedExam])
 
   async function loadActiveExam() {
     if (!room) return
+    const active = (room.exams || []).filter(item => item.launched_at).sort((a, b) =>
+      new Date(b.launched_at) - new Date(a.launched_at)
+    )[0]
+    if (!active) return
     try {
-      const { data } = await getAPI().get(`/exam/room/${room.id}`)
-      const active = data.exams.find(e => e.status === 'active')
-      if (active) {
-        // Check if student already submitted this exam
-        const { data: history } = await getAPI().get(`/exam/student/${student.id}`)
-        const submission = history.history.find(es => es.exam_id === active.id)
-        if (submission) {
-          setSubmitted(true)
-          setResult({ score: submission.score, total: submission.total, percentage: submission.percentage })
-        } else {
-          initializeExam(active)
-        }
+      const { data: history } = await getAPI().get(`/scores/student/${student.id}`)
+      const submission = (Array.isArray(history) ? history : []).find(item => item.exam_id === active.id)
+      if (submission) {
+        setSubmitted(true)
+        setResult({
+          score: submission.score,
+          total: submission.total,
+          percentage: submission.total ? Math.round(submission.score / submission.total * 100) : 0
+        })
+        return
       }
+      const { data } = await getExam(active.id)
+      initializeExam({ ...data, id: data.id || active.id, questions: data.questions_json || data.questions || [] })
     } catch {}
   }
 
@@ -795,17 +800,30 @@ function ExamTab({ roomCode, socket, student, room }) {
     submittingRef.current = true
     clearInterval(timerRef.current)
     try {
-      const { data } = await getAPI().post('/exam/submit', {
-        student_id: student.id,
+      const questions = current.exam.questions || []
+      const score = questions.reduce((totalScore, question, index) => {
+        const correct = question.correct_index ?? question.correctIndex ?? question.answer_index
+        return totalScore + (correct !== undefined && String(current.answers[index]) === String(correct) ? 1 : 0)
+      }, 0)
+      const total = questions.filter(question =>
+        question.correct_index !== undefined ||
+        question.correctIndex !== undefined ||
+        question.answer_index !== undefined
+      ).length || questions.length
+      await submitScore({
         exam_id: current.exam.id,
-        answers: current.answers
+        score,
+        total,
+        answers_json: current.answers
       })
       latestRef.current.submitted = true
       setSubmitted(true)
-      setResult(data)
-      socket.emit('exam:submit', {
+      setResult({ score, total, percentage: total ? Math.round((score / total) * 100) : 0 })
+      emitExamSubmitted({
         room_code: roomCode,
-        student,
+        student_id: student.id,
+        name: student.name,
+        usn: student.usn,
         exam_id: current.exam.id,
         score: data.score,
         total: data.total
