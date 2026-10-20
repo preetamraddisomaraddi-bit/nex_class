@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAPI } from '../api.js'
+import { getRoom, markAttendance } from '../api.js'
+import { useAuth } from '../context/AuthContext.jsx'
+import { joinRoom as joinSocketRoom, startHeartbeat } from '../socket.js'
 
 export default function Dashboard() {
   const navigate = useNavigate()
-  const student = JSON.parse(localStorage.getItem('student') || '{}')
+  const { student, logout: clearSession } = useAuth()
   const [roomCode, setRoomCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,7 +18,15 @@ export default function Dashboard() {
     setError('')
     try {
       const code = roomCode.toUpperCase()
-      const { data } = await getAPI().get(`/rooms/${code}`)
+      const { data } = await getRoom(code)
+      const room = data.room || data
+      if (room.status !== 'active') {
+        setError('This session has already ended.')
+        return
+      }
+      await markAttendance({ room_id: room.id, status: 'present' })
+      joinSocketRoom(student, code)
+      startHeartbeat(student, code, 'focused')
       navigate(`/classroom/${code}`)
     } catch (err) {
       setError(err.response?.data?.error || 'Room not found or already ended')
@@ -26,8 +36,7 @@ export default function Dashboard() {
   }
 
   function logout() {
-    localStorage.removeItem('student')
-    localStorage.removeItem('token')
+    clearSession()
     navigate('/login')
   }
 
@@ -49,7 +58,7 @@ export default function Dashboard() {
           </button>
           <div className="text-right">
             <p className="text-sm font-semibold text-slate-900 leading-none">{student.name}</p>
-            <p className="text-[10px] text-slate-500 font-medium mt-1">Roll: {student.roll_no}</p>
+            <p className="text-[10px] text-slate-500 font-medium mt-1">USN: {student.usn || student.roll_no || '—'}</p>
           </div>
           <button onClick={logout} className="text-slate-500 hover:text-red-650 text-sm font-medium transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
             Sign out
@@ -80,9 +89,9 @@ export default function Dashboard() {
 
             {error && <p className="text-red-500 text-sm text-center bg-red-50 border border-red-100 py-2 rounded-lg">{error}</p>}
 
-            <button type="submit" disabled={loading || roomCode.length !== 6}
+            <button type="submit" disabled={loading || !roomCode.trim()}
               className="w-full bg-indigo-600 hover:bg-indigo-755 disabled:opacity-40 text-white font-semibold py-3.5 rounded-xl transition-all shadow-md shadow-indigo-600/10">
-              {loading ? 'Validating Room...' : 'Join Classroom 🚀'}
+              {loading ? 'Joining...' : 'Join Classroom 🚀'}
             </button>
           </form>
         </div>
