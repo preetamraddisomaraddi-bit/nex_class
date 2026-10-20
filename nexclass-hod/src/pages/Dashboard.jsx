@@ -94,18 +94,26 @@ export default function Dashboard() {
     year: 'numeric',
   })
 
-  function handleApprove(teacherId, name) {
-    approveTeacher(teacherId)
-    const displayName = name.replace(/^Prof\.\s*/, '')
-    showToast(`Prof. ${displayName} has been approved ✅`, 'success')
+  async function handleApprove(teacherId, name) {
+    try {
+      await approveTeacher(teacherId)
+      const displayName = name.replace(/^Prof\.\s*/, '')
+      showToast(`Prof. ${displayName} has been approved ✅`, 'success')
+    } catch (error) {
+      showToast(error.message || 'Unable to approve this teacher.', 'error')
+    }
   }
 
-  function handleReject(teacherId, name) {
+  async function handleReject(teacherId, name) {
     const displayName = name.replace(/^Prof\.\s*/, '')
     const confirmed = window.confirm(`Reject Prof. ${displayName}? This cannot be undone.`)
     if (!confirmed) return
-    rejectTeacher(teacherId)
-    showToast(`Prof. ${displayName} has been rejected`, 'warning')
+    try {
+      await rejectTeacher(teacherId)
+      showToast(`Prof. ${displayName} has been rejected`, 'warning')
+    } catch (error) {
+      showToast(error.message || 'Unable to reject this teacher.', 'error')
+    }
   }
 
   const linkButtonStyle = {
