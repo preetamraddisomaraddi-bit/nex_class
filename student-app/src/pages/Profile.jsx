@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getAPI } from '../api.js'
+import { getMyAttendance, getMyProfile, getMyScores } from '../api.js'
+import { useAuth } from '../context/AuthContext.jsx'
 import { jsPDF } from 'jspdf'
 
 export default function Profile() {
   const navigate = useNavigate()
-  const student = JSON.parse(localStorage.getItem('student') || '{}')
+  const { student } = useAuth()
+  const profile = student
   
   const [attStats, setAttStats] = useState({ total: 0, present: 0, percentage: 0, records: [] })
+  const [profileError, setProfileError] = useState('')
   const [examHistory, setExamHistory] = useState([])
   const [badges, setBadges] = useState([])
   const [notes, setNotes] = useState([])
@@ -21,21 +24,32 @@ export default function Profile() {
   async function loadData() {
     setLoading(true)
     try {
-      const api = getAPI()
-      const [attRes, examRes, badgeRes, notesRes, pdfRes] = await Promise.all([
-        api.get(`/attendance/student/${student.id}`),
-        api.get(`/exam/student/${student.id}`),
-        api.get(`/badges/student/${student.id}`),
-        api.get(`/notes/student/${student.id}`),
-        api.get(`/pdfs/student/${student.id}`)
+      const [profileRes, attRes, scoreRes] = await Promise.all([
+        getMyProfile(student.id),
+        getMyAttendance(student.id),
+        getMyScores(student.id)
       ])
-
-      setAttStats(attRes.data)
-      setExamHistory(examRes.data.history || [])
-      setBadges(badgeRes.data.badges || [])
-      setNotes(notesRes.data.notes || [])
-      setPushedPDFs(pdfRes.data.pdfs || [])
+      const fullProfile = profileRes.data
+      const attendanceRecords = Array.isArray(attRes.data) ? attRes.data : (fullProfile.attendance || [])
+      const scores = Array.isArray(scoreRes.data) ? scoreRes.data : (fullProfile.scores || [])
+      const present = attendanceRecords.filter(record => record.status === 'present').length
+      setAttStats({
+        total: attendanceRecords.length,
+        present,
+        percentage: attendanceRecords.length ? Math.round((present / attendanceRecords.length) * 100) : 0,
+        records: attendanceRecords
+      })
+      setExamHistory(scores.map(score => ({
+        ...score,
+        percentage: score.total ? Math.round((score.score / score.total) * 100) : 0,
+        title: score.title || 'Exam',
+        pushed_at: score.submitted_at || score.exam_date
+      })))
+      setBadges([])
+      setNotes([])
+      setPushedPDFs([])
     } catch (err) {
+      setProfileError(err.response?.data?.error || 'Failed to load profile data from the HOD server.')
       console.error('Failed to load profile data:', err)
     } finally {
       setLoading(false)
@@ -89,7 +103,7 @@ export default function Profile() {
     
     doc.setFontSize(10)
     doc.setTextColor(100, 116, 139)
-    doc.text(`Student: ${student.name} (Roll: ${student.roll_no})`, 20, 30)
+    doc.text(`Student: ${student.name} (USN: ${profile?.usn || student.usn || '—'})`, 20, 30)
     doc.text(`Total Notes Compiled: ${notes.length}`, 20, 36)
     doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 42)
     
@@ -226,6 +240,8 @@ export default function Profile() {
         </button>
       </header>
 
+      {profileError && <p role="alert" className="mx-auto mt-4 max-w-4xl rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{profileError}</p>}
+
       <main className="p-8 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
         
         {/* LEFT COLUMN: Personal Card & Badges */}
@@ -238,12 +254,12 @@ export default function Profile() {
               {student.name?.slice(0, 1).toUpperCase()}
             </div>
             <h2 className="text-xl font-bold text-white leading-tight">{student.name}</h2>
-            <p className="text-sm text-indigo-400 font-bold mt-1">Roll Number: {student.roll_no}</p>
+            <p className="text-sm text-indigo-400 font-bold mt-1">USN: {profile?.usn || student.usn || '—'}</p>
             
             <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-700/40 text-left text-xs">
               <div>
                 <span className="text-slate-400 block font-semibold">CLASS</span>
-                <span className="text-white font-bold">{student.class_section}</span>
+                <span className="text-white font-bold">{profile?.semester ? `Semester ${profile.semester}` : '—'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block font-semibold">EMAIL</span>
