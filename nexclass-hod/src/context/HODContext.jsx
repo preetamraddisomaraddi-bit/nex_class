@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import { apiRequest, getHODServerURL } from '../api'
 
@@ -27,6 +27,7 @@ const fromServer = teacher => ({
 })
 
 export function HODProvider({ children }) {
+  const socketRef = useRef(null)
   const [teachers, setTeachers] = useState([])
   const [loadingTeachers, setLoadingTeachers] = useState(false)
   const [teacherLoadError, setTeacherLoadError] = useState('')
@@ -82,6 +83,7 @@ export function HODProvider({ children }) {
     })
 
     const appendEvent = (type, message, details = {}) => {
+      if (!mounted) return
       setRealtime(previous => ({
         ...previous,
         recentEvents: [{ id: `${Date.now()}-${Math.random()}`, type, message, at: new Date().toISOString(), ...details }, ...previous.recentEvents].slice(0, 8),
@@ -105,6 +107,7 @@ export function HODProvider({ children }) {
         reconnectionDelay: 1500,
         timeout: 10000,
       })
+      socketRef.current = socket
 
       socket.on('connect', () => {
         if (mounted) setRealtime(previous => ({ ...previous, connected: true, error: '' }))
@@ -151,12 +154,22 @@ export function HODProvider({ children }) {
         }))
         appendEvent('student', `${student.name} joined ${student.room_code}`, { usn: student.usn })
       })
-      socket.on('student:offline', student => appendEvent('student', `${student.name || 'A student'} disconnected from ${student.room_code || 'a session'}`))
+      socket.on('student:offline', student => {
+        if (!mounted) return
+        setRealtime(previous => ({
+          ...previous,
+          activeRooms: previous.activeRooms.map(room => room.room_code === student.room_code
+            ? { ...room, students: (room.students || []).filter(id => id !== student.student_id) }
+            : room),
+        }))
+        appendEvent('student', `${student.name || 'A student'} disconnected from ${student.room_code || 'a session'}`)
+      })
       socket.on('note:pushed', note => appendEvent('note', `A teacher shared notes in ${note.room_code}`))
-      socket.on('exam:launched', exam => appendEvent('exam', `${exam.title || 'An exam'} started in ${exam.room_code}`))
+      socket.on('exam:launched', exam => appendEvent('exam', `${exam.title || 'An exam'} started in ${exam.room_code}`, { action: 'launched' }))
       socket.on('exam:submitted', submission => appendEvent('exam', `A student submitted an exam in ${submission.room_code}`))
       socket.on('code:submitted', submission => appendEvent('code', `A student submitted code in ${submission.room_code}`))
       socket.on('student:status', status => appendEvent('student', `${status.name || 'Student'} is ${status.status || 'active'} in ${status.room_code || 'a session'}`))
+      socket.on('student:force-close', student => appendEvent('alert', `${student.name || 'A student'} force-closed the Student app`, { studentId: student.student_id, usn: student.usn }))
     }
 
     const handleAuthChange = event => {
@@ -164,6 +177,7 @@ export function HODProvider({ children }) {
       else {
         socket?.disconnect()
         socket = null
+        socketRef.current = null
         resetRealtime()
       }
     }
@@ -174,6 +188,7 @@ export function HODProvider({ children }) {
       mounted = false
       window.removeEventListener('nexclass-auth-change', handleAuthChange)
       socket?.disconnect()
+      socketRef.current = null
     }
   }, [])
 
@@ -181,6 +196,7 @@ export function HODProvider({ children }) {
     const result = await apiRequest(`/teachers/${teacherId}/approve`, { method: 'PATCH' })
     const updated = fromServer(result.teacher)
     setTeachers(previous => previous.map(teacher => teacher.id === teacherId ? updated : teacher))
+    socketRef.current?.emit('hod:teacher-approved', { teacher_id: Number(teacherId) })
     return updated
   }
 
