@@ -36,6 +36,7 @@ function startServer() {
   app.use('/api/attendance', require('./routes/attendance'))
   app.use('/api/exams', require('./routes/exams'))
   app.use('/api/scores', require('./routes/scores'))
+  app.use('/api/alerts', require('./routes/alerts'))
   app.use((err, _req, res, _next) => {
     console.error('API request failed:', err.message)
     res.status(500).json({ error: 'Server error' })

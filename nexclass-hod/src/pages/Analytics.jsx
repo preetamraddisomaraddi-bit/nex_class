@@ -1,15 +1,5 @@
-import { useState, useMemo } from 'react'
-import {
-  STUDENTS,
-  TEACHERS,
-  SESSION_LOGS,
-  MONTHLY_STATS,
-  getAtRiskStudents,
-  getDeptAvgAttendance,
-  getDeptAvgScore,
-  getSemesterAttendance,
-  getTopStudents,
-} from '../data/mockData'
+import { useState, useMemo, useEffect } from 'react'
+import { getTeachers, getStudents, getRooms, getStudentProfile } from '../api'
 import CSSBarChart from '../components/CSSBarChart'
 import StatCard from '../components/StatCard'
 
@@ -31,7 +21,8 @@ const avatarColor = name => {
 }
 
 function Avatar({ initials, name, size = 34 }) {
-  return <div aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: avatarColor(name), color: 'white', fontSize: size <= 30 ? 10 : 12, fontWeight: 700 }}>{initials}</div>
+  const initialsText = initials || String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('')
+  return <div aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: avatarColor(name), color: 'white', fontSize: size <= 30 ? 10 : 12, fontWeight: 700 }}>{initialsText}</div>
 }
 
 function Panel({ title, subtitle, trailing, children, bodyPadding = 20 }) {
@@ -115,7 +106,7 @@ function TeacherSummaryTable({ teachers }) {
       <td style={tableCell}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><Avatar initials={teacher.initials} name={teacher.name} size={30} /><span style={{ fontWeight: 600, color: 'var(--text)' }}>{teacher.name}</span></div></td>
       <td style={{ ...tableCell, fontFamily: monoFont }}>{teacher.totalClasses} classes</td>
       <td style={{ ...tableCell, fontFamily: monoFont }}>{teacher.avgDuration > 0 ? `${teacher.avgDuration} mins` : '—'}</td>
-      <td style={{ ...tableCell, color: 'var(--muted)' }}>{teacher.totalStudentsTaught} students</td>
+      <td style={{ ...tableCell, color: 'var(--muted)' }}>{teacher.totalStudentsTaught === '—' ? '—' : `${teacher.totalStudentsTaught} students`}</td>
     </tr>)}</tbody>
   </table></div>
 }
@@ -135,56 +126,126 @@ function InsightRow({ icon, value, label, tone, last = false }) {
 
 export default function Analytics() {
   const [activeTab, setActiveTab] = useState('attendance')
-  const semAttendance = getSemesterAttendance()
-  const topStudents = getTopStudents(9)
-  const atRiskStudents = getAtRiskStudents()
-  const deptAttendance = getDeptAvgAttendance()
-  const deptScore = getDeptAvgScore()
-  const approvedTeachers = TEACHERS.filter(teacher => teacher.status === 'approved')
+  const [teachers, setTeachers] = useState([])
+  const [students, setStudents] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    Promise.all([getTeachers(), getStudents(), getRooms()])
+      .then(async ([teacherRows, studentRows, roomRows]) => {
+        const profiles = await Promise.all((studentRows || []).map(student => getStudentProfile(student.id).catch(() => null)))
+        if (!active) return
+        const roomList = Array.isArray(roomRows) ? roomRows : []
+        const enriched = (studentRows || []).map((student, index) => {
+          const profile = profiles[index] || {}
+          const records = profile.attendance || []
+          const semRooms = roomList.filter(room => Number(room.semester) === Number(student.semester))
+          const subjectRooms = new Map()
+          semRooms.forEach(room => subjectRooms.set(room.subject, (subjectRooms.get(room.subject) || 0) + 1))
+          const subjects = [...subjectRooms.entries()].map(([subject, held]) => {
+            const rows = records.filter(row => row.subject === subject)
+            const present = rows.filter(row => row.status === 'present').length
+            const late = rows.filter(row => row.status === 'late').length
+            const absent = Math.max(0, held - present - late)
+            return { subject, held, present, late, absent, pct: held ? Math.round(present / held * 100) : 0 }
+          })
+          const attendancePct = semRooms.length ? Math.min(100, Math.round(Number(student.classes_attended || 0) / semRooms.length * 100)) : 0
+          const exams = (profile.scores || []).map(score => ({ ...score, title: score.title || 'Exam', date: score.date || score.submitted_at }))
+          return { ...student, initials: String(student.name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join(''), attendance_pct: attendancePct, attendance: { overall: attendancePct, subjects }, exams, codeSubmissions: Number(profile.code_submissions || student.code_submissions || 0), badges: [] }
+        }).sort((a, b) => Number(b.avg_score || 0) - Number(a.avg_score || 0))
+        const ranked = enriched.map((student, index) => {
+          const badges = []
+          if (student.attendance_pct >= 75) badges.push('Attendance Star')
+          if (student.codeSubmissions >= 1) badges.push('Coding Champ')
+          if (student.codeSubmissions >= 3) badges.push('Fast Learner')
+          if (student.exams.some(exam => exam.total && exam.score / exam.total >= 0.8)) badges.push('Exam Ace')
+          if (student.exams.some(exam => exam.score === exam.total)) badges.push('Perfect Score')
+          if (index === 0 && student.avg_score != null) badges.push('Top Performer')
+          if (Number(student.classes_attended || 0) >= 10) badges.push('Consistent')
+          return { ...student, rank: index + 1, avgScore: student.avg_score == null ? null : Math.round(Number(student.avg_score)), badges }
+        })
+        setTeachers(Array.isArray(teacherRows) ? teacherRows : [])
+        setStudents(ranked)
+        setRooms(roomList)
+      })
+      .catch(error => { if (active) setLoadError(error.message || 'Failed to load analytics data.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const approvedTeachers = teachers.filter(teacher => teacher.status === 'approved').map(teacher => ({
+    ...teacher,
+    initials: String(teacher.name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join(''),
+    totalClasses: Number(teacher.total_classes || 0),
+    totalStudentsTaught: '—',
+    avgDuration: 0,
+  }))
+  const eligibleStudents = students.filter(student => student.attendance_pct > 0)
+  const deptAttendance = eligibleStudents.length ? Math.round(eligibleStudents.reduce((sum, student) => sum + student.attendance_pct, 0) / eligibleStudents.length) : 0
+  const scoreRows = students.flatMap(student => student.exams.map(exam => ({ ...exam, pct: exam.total ? exam.score / exam.total * 100 : 0 })))
+  const deptScore = scoreRows.length ? Math.round(scoreRows.reduce((sum, exam) => sum + exam.pct, 0) / scoreRows.length) : 0
+  const atRiskStudents = students.filter(student => student.attendance_pct > 0 && student.attendance_pct < 75)
+  const semAttendance = [...new Set(students.map(student => Number(student.semester)))].sort((a, b) => a - b).map(semester => {
+    const cohort = eligibleStudents.filter(student => Number(student.semester) === semester)
+    return { semester: `Sem ${semester}`, pct: cohort.length ? Math.round(cohort.reduce((sum, student) => sum + student.attendance_pct, 0) / cohort.length) : 0 }
+  })
+  const topStudents = students.filter(student => student.avgScore != null).slice(0, 9)
 
   const subjectScores = useMemo(() => {
-    const subjects = {}
-    STUDENTS.forEach(student => {
-      student.exams.forEach(exam => {
-        if (!subjects[exam.subject]) subjects[exam.subject] = { total: 0, count: 0 }
-        subjects[exam.subject].total += (exam.score / exam.total) * 100
-        subjects[exam.subject].count += 1
-      })
+    const grouped = {}
+    scoreRows.forEach(exam => {
+      const key = exam.subject || 'Unspecified'
+      if (!grouped[key]) grouped[key] = { total: 0, count: 0 }
+      grouped[key].total += exam.pct
+      grouped[key].count += 1
     })
-    return Object.entries(subjects).map(([name, data]) => ({ label: name, value: Math.round(data.total / data.count), max: 100, color: '#4F46E5' }))
-  }, [])
+    return Object.entries(grouped).map(([label, data]) => ({ label, value: Math.round(data.total / data.count), max: 100, color: '#4F46E5' }))
+  }, [scoreRows])
 
-  const teacherActivity = useMemo(() => TEACHERS
-    .filter(teacher => teacher.status === 'approved')
-    .map(teacher => ({ label: teacher.name.replace('Prof. ', ''), value: teacher.totalClasses, max: 30, color: '#059669' }))
-    .sort((a, b) => b.value - a.value), [])
-
+  const teacherActivity = approvedTeachers.map(teacher => ({ label: teacher.name.replace('Prof. ', ''), value: teacher.totalClasses, max: 30, color: '#059669' })).sort((a, b) => b.value - a.value)
   const scoreDistribution = useMemo(() => {
     const ranges = { '90-100': 0, '80-89': 0, '70-79': 0, '60-69': 0, 'Below 60': 0 }
-    STUDENTS.forEach(student => student.exams.forEach(exam => {
-      const percentage = (exam.score / exam.total) * 100
-      if (percentage >= 90) ranges['90-100'] += 1
-      else if (percentage >= 80) ranges['80-89'] += 1
-      else if (percentage >= 70) ranges['70-79'] += 1
-      else if (percentage >= 60) ranges['60-69'] += 1
+    scoreRows.forEach(exam => {
+      if (exam.pct >= 90) ranges['90-100'] += 1
+      else if (exam.pct >= 80) ranges['80-89'] += 1
+      else if (exam.pct >= 70) ranges['70-79'] += 1
+      else if (exam.pct >= 60) ranges['60-69'] += 1
       else ranges['Below 60'] += 1
-    }))
+    })
     const colors = { '90-100': '#059669', '80-89': '#4F46E5', '70-79': '#D97706', '60-69': '#F59E0B', 'Below 60': '#DC2626' }
-    return Object.entries(ranges).map(([label, value]) => ({ label, value, max: 8, color: colors[label] }))
-  }, [])
+    return Object.entries(ranges).map(([label, value]) => ({ label, value, max: Math.max(1, ...Object.values(ranges)), color: colors[label] }))
+  }, [scoreRows])
 
-  const sessionsPerMonth = MONTHLY_STATS.map(month => ({ label: month.month, value: month.sessions, max: 60, color: '#D97706' }))
-  const attendancePerMonth = MONTHLY_STATS.map(month => ({ label: month.month, value: month.attendance, max: 100, color: '#4F46E5' }))
+  const byMonth = new Map()
+  rooms.forEach(room => {
+    const date = new Date(room.created_at)
+    if (Number.isNaN(date.getTime())) return
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const label = date.toLocaleString('en-IN', { month: 'short' })
+    const row = byMonth.get(monthKey) || { label, sessions: 0, students: 0 }
+    row.sessions += 1
+    row.students += Number(room.students_present || 0)
+    byMonth.set(monthKey, row)
+  })
+  const monthlyStats = [...byMonth.entries()].sort(([left], [right]) => left.localeCompare(right)).slice(-6).map(([, month]) => ({ month: month.label, sessions: month.sessions, attendance: deptAttendance, avgScore: deptScore }))
+  const sessionsPerMonth = monthlyStats.map(month => ({ label: month.month, value: month.sessions, max: Math.max(1, ...monthlyStats.map(item => item.sessions)), color: '#D97706' }))
+  const attendancePerMonth = monthlyStats.map(month => ({ label: month.month, value: month.attendance, max: 100, color: '#4F46E5' }))
   const mostActive = [...approvedTeachers].sort((a, b) => b.totalClasses - a.totalClasses)[0]
-  const avgDuration = SESSION_LOGS.length ? Math.round(SESSION_LOGS.reduce((sum, session) => sum + session.duration, 0) / SESSION_LOGS.length) : 0
-  const avgStudents = SESSION_LOGS.length ? Math.round(SESSION_LOGS.reduce((sum, session) => sum + session.studentsPresent, 0) / SESSION_LOGS.length) : 0
-  const totalNotes = SESSION_LOGS.reduce((sum, session) => sum + session.notesCount, 0)
-  const totalExams = SESSION_LOGS.reduce((sum, session) => sum + session.examsConducted, 0)
+  const durations = rooms.filter(room => room.ended_at && room.created_at).map(room => Math.max(0, (new Date(room.ended_at) - new Date(room.created_at)) / 60000))
+  const avgDuration = durations.length ? Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length) : 0
+  const avgStudents = rooms.length ? Math.round(rooms.reduce((sum, room) => sum + Number(room.students_present || 0), 0) / rooms.length) : 0
+  const totalNotes = rooms.reduce((sum, room) => sum + Number(room.notes_count || 0), 0)
+  const totalExams = rooms.reduce((sum, room) => sum + Number(room.exams_count || 0), 0)
   const lastUpdated = new Date().toLocaleDateString('en-IN')
 
   const tabs = [['attendance', 'Attendance'], ['performance', 'Performance'], ['teachers', 'Teachers'], ['sessions', 'Sessions']]
   const chartColors = ['#059669', '#4F46E5', '#D97706', '#F59E0B', '#DC2626']
   const chartLegend = ['90-100', '80-89', '70-79', '60-69', 'Below 60']
+
+  if (loading) return <div style={{ display: 'grid', placeItems: 'center', height: '60vh', color: 'var(--muted)', fontSize: 13 }}>Loading analytics...</div>
 
   return (
     <div>
@@ -198,6 +259,8 @@ export default function Analytics() {
         @media (max-width: 420px) { .analytics-stat-grid { grid-template-columns: 1fr; } }
       `}</style>
 
+      {loadError && <div role="alert" style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', fontSize: 13 }}>{loadError}</div>}
+
       <header className="analytics-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 24 }}>
         <div><h1 style={{ fontFamily: headingFont, fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>Department Analytics</h1><p style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>Computer Science &amp; Engineering · Academic Year 2024-25</p></div>
         <span style={{ padding: '6px 14px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>Last updated: {lastUpdated}</span>
@@ -206,7 +269,7 @@ export default function Analytics() {
       <section className="analytics-stat-grid" aria-label="Department analytics summary">
         <StatCard icon="📊" iconBg="var(--indigo-light)" value={`${deptAttendance}%`} label="Dept. Attendance" subtitle={deptAttendance >= 75 ? 'Above minimum' : 'Below threshold'} subtitleColor={deptAttendance >= 75 ? 'var(--green)' : 'var(--red)'} />
         <StatCard icon="🎯" iconBg="var(--green-light)" value={`${deptScore}%`} label="Avg Exam Score" subtitle="Across all students" subtitleColor="var(--muted)" />
-        <StatCard icon="📋" iconBg="var(--amber-light)" value={SESSION_LOGS.length} label="Total Sessions" subtitle="This academic period" subtitleColor="var(--muted)" />
+        <StatCard icon="📋" iconBg="var(--amber-light)" value={rooms.length} label="Total Sessions" subtitle="This academic period" subtitleColor="var(--muted)" />
         <StatCard icon="⚠️" iconBg="var(--red-light)" value={atRiskStudents.length} label="At Risk Students" subtitle="Below 75% attendance" subtitleColor={atRiskStudents.length > 0 ? 'var(--red)' : 'var(--green)'} />
       </section>
 
@@ -263,7 +326,7 @@ export default function Analytics() {
 
       {activeTab === 'sessions' && <div className="analytics-grid">
         <Panel title="Sessions per Month">
-          <div style={{ marginBottom: 4, fontFamily: headingFont, fontSize: 28, fontWeight: 800, color: 'var(--indigo)' }}>{SESSION_LOGS.length} Total Sessions</div>
+          <div style={{ marginBottom: 4, fontFamily: headingFont, fontSize: 28, fontWeight: 800, color: 'var(--indigo)' }}>{rooms.length} Total Sessions</div>
           <div style={{ marginBottom: 20, fontSize: 12, color: 'var(--muted)' }}>This academic period</div>
           <div className="analytics-chart-scroll"><CSSBarChart type="vertical" height={140} data={sessionsPerMonth} showValues showLabels /></div>
         </Panel>

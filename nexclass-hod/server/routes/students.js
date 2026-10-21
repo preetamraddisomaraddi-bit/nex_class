@@ -11,7 +11,9 @@ router.get('/', allowRoles('hod'), (req, res) => {
   if (req.query.semester) { where = 'WHERE s.semester=?'; params.push(Number(req.query.semester)) }
   const list = dbAll(`SELECT s.id, s.name, s.usn, s.email, s.semester, s.created_at,
     (SELECT COUNT(*) FROM attendance a WHERE a.student_id=s.id AND a.status='present') AS classes_attended,
-    (SELECT AVG(100.0 * es.score / NULLIF(es.total,0)) FROM exam_scores es WHERE es.student_id=s.id) AS avg_score
+    (SELECT AVG(100.0 * es.score / NULLIF(es.total,0)) FROM exam_scores es WHERE es.student_id=s.id) AS avg_score,
+    (SELECT MAX(100.0 * es.score / NULLIF(es.total,0)) FROM exam_scores es WHERE es.student_id=s.id) AS best_exam_score,
+    (SELECT COUNT(*) FROM code_submissions cs WHERE cs.student_id=s.id) AS code_submissions
     FROM students s ${where} ORDER BY s.name`, params)
   res.json(list)
 })

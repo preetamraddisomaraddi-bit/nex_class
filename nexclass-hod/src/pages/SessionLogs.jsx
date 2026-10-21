@@ -1,12 +1,11 @@
-import { useState, useMemo } from 'react'
-import { SESSION_LOGS, TEACHERS } from '../data/mockData'
+import { useState, useMemo, useEffect } from 'react'
+import { getRooms, getRoomDetail, getTeachers, getStudents } from '../api'
 import Modal from '../components/Modal'
+import { useToast } from '../components/AlertToast'
 
 const headingFont = '"Plus Jakarta Sans", sans-serif'
 const monoFont = '"JetBrains Mono", monospace'
-const approvedTeachers = TEACHERS.filter(teacher => teacher.status === 'approved')
-
-const formatDate = dateStr => new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-IN', {
+const formatDate = dateStr => new Date(dateStr).toLocaleDateString('en-IN', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
@@ -43,7 +42,7 @@ function SessionDetail({ session }) {
     ['Teacher', s.teacher.replace('Prof. ', 'Prof.\n')],
     ['Date & Time', formatDate(s.date)],
     ['Semester', `Semester ${s.semester}`],
-    ['Duration', `${s.duration} minutes`],
+    ['Duration', s.duration ? `${s.duration} minutes` : s.status === 'active' ? 'Ongoing' : '—'],
     ['Students', `${s.studentsPresent} / ${s.totalStudents}`, { color: getRateColor(s.studentsPresent, s.totalStudents) }],
     ['Status', <StatusBadge key="session-status" status={s.status} />],
   ]
@@ -109,6 +108,12 @@ const sectionTitle = { margin: 0, fontFamily: headingFont, fontSize: 14, fontWei
 const mutedText = { padding: '16px 0', fontSize: 13, color: 'var(--muted)' }
 
 export default function SessionLogs() {
+  const showToast = useToast()
+  const [rooms, setRooms] = useState([])
+  const [teachers, setTeachers] = useState([])
+  const [students, setStudents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [teacherFilter, setTeacherFilter] = useState('all')
   const [semesterFilter, setSemesterFilter] = useState('all')
@@ -116,7 +121,26 @@ export default function SessionLogs() {
   const [selectedSession, setSelectedSession] = useState(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
 
-  const filteredSessions = useMemo(() => SESSION_LOGS.filter(session => {
+  useEffect(() => {
+    let active = true
+    Promise.all([getRooms(), getTeachers(), getStudents()])
+      .then(([roomRows, teacherRows, studentRows]) => {
+        if (!active) return
+        const cohortCount = new Map()
+        ;(studentRows || []).forEach(student => cohortCount.set(Number(student.semester), (cohortCount.get(Number(student.semester)) || 0) + 1))
+        setRooms((roomRows || []).map(room => {
+          const duration = room.ended_at && room.created_at ? Math.max(0, Math.round((new Date(room.ended_at) - new Date(room.created_at)) / 60000)) : null
+          return { ...room, roomCode: room.code, teacher: room.teacher_name || '—', teacherId: room.teacher_id, date: room.created_at, duration, studentsPresent: Number(room.students_present || 0), totalStudents: cohortCount.get(Number(room.semester)) || 0, notesCount: Number(room.notes_count || 0), examsConducted: Number(room.exams_count || 0) }
+        }))
+        setTeachers(Array.isArray(teacherRows) ? teacherRows : [])
+        setStudents(Array.isArray(studentRows) ? studentRows : [])
+      })
+      .catch(error => { if (active) showToast(error.message || 'Failed to load session logs.', 'error') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [showToast])
+
+  const filteredSessions = useMemo(() => rooms.filter(session => {
     const query = searchQuery.toLowerCase()
     const matchesSearch = session.roomCode.toLowerCase().includes(query)
       || session.subject.toLowerCase().includes(query)
@@ -125,7 +149,7 @@ export default function SessionLogs() {
     const matchesSem = semesterFilter === 'all' || session.semester === Number.parseInt(semesterFilter, 10)
     const matchesStatus = statusFilter === 'all' || session.status === statusFilter
     return matchesSearch && matchesTeacher && matchesSem && matchesStatus
-  }), [searchQuery, teacherFilter, semesterFilter, statusFilter])
+  }), [rooms, searchQuery, teacherFilter, semesterFilter, statusFilter])
 
   const clearFilters = () => {
     setSearchQuery('')
@@ -138,10 +162,39 @@ export default function SessionLogs() {
     setSelectedSession(null)
   }
   const hasActiveFilters = Boolean(searchQuery) || teacherFilter !== 'all' || semesterFilter !== 'all' || statusFilter !== 'all'
-  const completedCount = SESSION_LOGS.filter(session => session.status === 'completed').length
-  const totalExams = SESSION_LOGS.reduce((sum, session) => sum + session.examsConducted, 0)
+  const approvedTeachers = teachers.filter(teacher => teacher.status === 'approved')
+  const completedCount = rooms.filter(session => session.status === 'completed').length
+  const totalExams = rooms.reduce((sum, session) => sum + session.examsConducted, 0)
+  const openSessionDetails = async session => {
+    setSelectedSession(session)
+    setShowDetailModal(true)
+    setDetailLoading(true)
+    try {
+      const detail = await getRoomDetail(session.code)
+      setSelectedSession({
+        ...session,
+        ...detail,
+        roomCode: detail.code,
+        teacher: detail.teacher_name || session.teacher,
+        date: detail.created_at,
+        duration: detail.ended_at && detail.created_at ? Math.max(0, Math.round((new Date(detail.ended_at) - new Date(detail.created_at)) / 60000)) : null,
+        studentsPresent: Number(detail.students_present || 0),
+        totalStudents: session.totalStudents,
+        attendance: detail.attendance || [],
+        notes: (detail.notes || []).map(note => note.content),
+        exams: (detail.exams || []).map(exam => ({ ...exam, avgScore: exam.avg_score == null ? 0 : Math.round(Number(exam.avg_score)) })),
+      })
+    } catch (error) {
+      showToast(error.message || 'Failed to load session details.', 'error')
+      setShowDetailModal(false)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
   const tableHead = { padding: '11px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }
   const tableCell = { padding: '13px 16px', fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }
+
+  if (loading) return <div style={{ display: 'grid', placeItems: 'center', height: '60vh', color: 'var(--muted)', fontSize: 13 }}>Loading session logs...</div>
 
   return (
     <div>
@@ -154,9 +207,9 @@ export default function SessionLogs() {
       `}</style>
 
       <header className="session-logs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-        <div><h1 style={{ fontFamily: headingFont, fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>Session Logs</h1><p style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>{SESSION_LOGS.length} total sessions recorded</p></div>
+        <div><h1 style={{ fontFamily: headingFont, fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>Session Logs</h1><p style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>{rooms.length} total sessions recorded</p></div>
         <div className="session-summary" style={{ display: 'flex', gap: 8 }}>
-          <span style={{ padding: '6px 14px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{SESSION_LOGS.length} Sessions</span>
+          <span style={{ padding: '6px 14px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{rooms.length} Sessions</span>
           <span style={{ padding: '6px 14px', borderRadius: 20, background: 'var(--green-light)', color: 'var(--green)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{completedCount} Completed</span>
           <span style={{ padding: '6px 14px', borderRadius: 20, background: 'var(--amber-light)', color: 'var(--amber)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{totalExams} Exams</span>
         </div>
@@ -176,7 +229,7 @@ export default function SessionLogs() {
         <select aria-label="Filter by status" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} style={{ width: 140, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, color: 'var(--text)' }}>
           <option value="all">All Status</option><option value="completed">Completed</option><option value="active">Active</option>
         </select>
-        <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12, color: 'var(--muted)' }}>Showing {filteredSessions.length} of {SESSION_LOGS.length} sessions</span>
+        <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12, color: 'var(--muted)' }}>Showing {filteredSessions.length} of {rooms.length} sessions</span>
         {hasActiveFilters && <button className="session-clear" type="button" onClick={clearFilters} style={{ padding: '7px 12px', border: '1px solid var(--border)', borderRadius: 6, background: 'transparent', color: 'var(--muted)', fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>✕ Clear</button>}
       </div>
 
@@ -191,13 +244,13 @@ export default function SessionLogs() {
               {filteredSessions.map(session => {
                 const rate = session.totalStudents > 0 ? session.studentsPresent / session.totalStudents : 0
                 const rateColor = getRateColor(session.studentsPresent, session.totalStudents)
-                return <tr className="session-log-row" key={session.id} tabIndex={0} onClick={() => { setSelectedSession(session); setShowDetailModal(true) }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedSession(session); setShowDetailModal(true) } }} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.15s' }}>
+                return <tr className="session-log-row" key={session.id} tabIndex={0} onClick={() => openSessionDetails(session)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSessionDetails(session) } }} style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.15s' }}>
                   <td style={tableCell}><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 5, background: 'var(--indigo-light)', color: 'var(--indigo)', fontFamily: monoFont, fontSize: 12, fontWeight: 600 }}>{session.roomCode}</span></td>
                   <td style={{ ...tableCell, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600 }} title={session.subject}>{session.subject}</td>
                   <td style={{ ...tableCell, fontSize: 12, color: 'var(--text2)' }}>{session.teacher.replace('Prof. ', '')}</td>
                   <td style={{ ...tableCell, color: 'var(--muted)', fontSize: 12 }}>Sem {session.semester}</td>
                   <td style={{ ...tableCell, fontFamily: monoFont, fontSize: 12, color: 'var(--text2)' }}>{formatDate(session.date)}</td>
-                  <td style={{ ...tableCell, fontFamily: monoFont, fontSize: 12, color: 'var(--muted)' }}>{session.duration} mins</td>
+                  <td style={{ ...tableCell, fontFamily: monoFont, fontSize: 12, color: 'var(--muted)' }}>{session.duration ? `${session.duration} mins` : session.status === 'active' ? 'Ongoing' : '—'}</td>
                   <td style={tableCell}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ fontFamily: monoFont, fontSize: 12, fontWeight: 600, color: rateColor }}>{session.studentsPresent}/{session.totalStudents}</span><span aria-hidden="true" style={{ display: 'inline-block', width: 40, height: 4, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}><span style={{ display: 'block', width: `${Math.max(0, Math.min(100, rate * 100))}%`, height: '100%', borderRadius: 2, background: rateColor }} /></span></div></td>
                   <td style={{ ...tableCell, fontSize: 12, color: 'var(--muted)' }}>{session.notesCount > 0 ? `${session.notesCount} 📝` : '—'}</td>
                   <td style={{ ...tableCell, fontSize: 12, color: 'var(--muted)' }}>{session.examsConducted > 0 ? `${session.examsConducted} 📋` : '—'}</td>
@@ -210,7 +263,7 @@ export default function SessionLogs() {
       </div>
 
       <Modal isOpen={showDetailModal} onClose={closeModal} title="Session Details" size="lg">
-        <SessionDetail session={selectedSession} />
+        {detailLoading ? <div style={{ display: 'grid', placeItems: 'center', height: 200, color: 'var(--muted)', fontSize: 13 }}>Loading session details...</div> : <SessionDetail session={selectedSession} />}
       </Modal>
     </div>
   )

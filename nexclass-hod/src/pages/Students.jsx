@@ -1,14 +1,16 @@
-import { useState, useMemo } from 'react'
-import { STUDENTS, getAtRiskStudents } from '../data/mockData'
+import { useState, useMemo, useEffect } from 'react'
+import { getStudents, getStudentProfile, getRooms } from '../api'
+import { useToast } from '../components/AlertToast'
 import Modal from '../components/Modal'
 import AttendanceRing from '../components/AttendanceRing'
 import BadgeGrid, { ALL_BADGES } from '../components/BadgeGrid'
 
 const headingFont = '"Plus Jakarta Sans", sans-serif'
 const monoFont = '"JetBrains Mono", monospace'
+const initials = name => String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('')
 
 const getAvgScore = student => {
-  if (!student.exams.length) return null
+  if (!student.exams?.length) return student.avg_score == null ? null : Math.round(Number(student.avg_score))
   const total = student.exams.reduce((sum, exam) => sum + (exam.score / exam.total) * 100, 0)
   return Math.round(total / student.exams.length)
 }
@@ -31,7 +33,7 @@ const getAvatarColor = name => {
 function StudentAvatar({ student, size = 36, fontSize = 13 }) {
   return (
     <div aria-hidden="true" style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: getAvatarColor(student.name), color: 'white', fontSize, fontWeight: 700 }}>
-      {student.initials}
+      {student.initials || initials(student.name)}
     </div>
   )
 }
@@ -72,7 +74,7 @@ function StudentProfile({ student, activeTab, onTabChange }) {
           <h3 style={{ fontFamily: headingFont, fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{s.name}</h3>
           <div style={{ marginTop: 4, fontFamily: monoFont, fontSize: 13, color: 'var(--indigo)' }}>{s.usn}</div>
           <div style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>Semester {s.semester} · {s.email}</div>
-          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--muted2)' }}>Joined {new Date(`${s.joinedDate}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--muted2)' }}>Joined {s.joinedDate ? new Date(s.joinedDate).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : '—'}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, marginTop: 12 }}>
             {[
               [`#${s.rank}`, 'Class Rank'],
@@ -184,37 +186,116 @@ const sectionTitle = { marginBottom: 12, fontFamily: headingFont, fontSize: 14, 
 const emptyProfile = { padding: 40, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }
 
 export default function Students() {
+  const showToast = useToast()
+  const [students, setStudents] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [semesterFilter, setSemesterFilter] = useState('all')
   const [attendanceFilter, setAttendanceFilter] = useState('all')
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [activeProfileTab, setActiveProfileTab] = useState('attendance')
-  const atRiskStudents = useMemo(() => getAtRiskStudents(), [])
+  const [profileLoading, setProfileLoading] = useState(false)
 
-  const filteredStudents = useMemo(() => STUDENTS.filter(student => {
+  useEffect(() => {
+    let active = true
+    Promise.all([getStudents(), getRooms()])
+      .then(([studentRows, roomRows]) => {
+        if (!active) return
+        const list = Array.isArray(studentRows) ? studentRows : []
+        const roomList = Array.isArray(roomRows) ? roomRows : []
+        const enriched = list.map(student => {
+          const semRooms = roomList.filter(room => Number(room.semester) === Number(student.semester))
+          const pct = semRooms.length ? Math.min(100, Math.round(Number(student.classes_attended || 0) / semRooms.length * 100)) : 0
+          return { ...student, joinedDate: student.created_at, codeSubmissions: Number(student.code_submissions || 0), attendance_pct: pct, attendance: { overall: pct, subjects: [] }, exams: [], badges: [] }
+        }).sort((a, b) => Number(b.avg_score || 0) - Number(a.avg_score || 0))
+        const ranked = enriched.map((student, index) => {
+          const badges = []
+          if (student.attendance_pct >= 75) badges.push('Attendance Star')
+          if (student.codeSubmissions >= 1) badges.push('Coding Champ')
+          if (student.codeSubmissions >= 3) badges.push('Fast Learner')
+          if (Number(student.best_exam_score) >= 80) badges.push('Exam Ace')
+          if (Number(student.best_exam_score) === 100) badges.push('Perfect Score')
+          if (index === 0 && student.avg_score != null) badges.push('Top Performer')
+          if (Number(student.classes_attended || 0) >= 10) badges.push('Consistent')
+          return { ...student, rank: index + 1, badges }
+        })
+        setRooms(roomList)
+        setStudents(ranked)
+      })
+      .catch(loadError => {
+        if (active) setError(loadError.message || 'Failed to load students.')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const atRiskStudents = useMemo(() => students.filter(student => student.attendance_pct > 0 && student.attendance_pct < 75), [students])
+
+  const filteredStudents = useMemo(() => students.filter(student => {
     const query = searchQuery.toLowerCase()
     const matchesSearch = student.name.toLowerCase().includes(query) || student.usn.toLowerCase().includes(query)
     const matchesSem = semesterFilter === 'all' || student.semester === Number.parseInt(semesterFilter, 10)
-    const attendance = student.attendance.overall
+    const attendance = student.attendance_pct || 0
     const matchesAtt = attendanceFilter === 'all'
       || (attendanceFilter === 'below75' && attendance < 75)
       || (attendanceFilter === '75to85' && attendance >= 75 && attendance <= 85)
       || (attendanceFilter === 'above85' && attendance > 85)
     return matchesSearch && matchesSem && matchesAtt
-  }), [searchQuery, semesterFilter, attendanceFilter])
+  }), [students, searchQuery, semesterFilter, attendanceFilter])
 
   const closeProfile = () => {
     setShowProfileModal(false)
     setSelectedStudent(null)
   }
-  const showProfile = student => {
-    setSelectedStudent(student)
+  const showProfile = async student => {
+    setProfileLoading(true)
     setActiveProfileTab('attendance')
     setShowProfileModal(true)
+    try {
+      const profile = await getStudentProfile(student.id)
+      const records = profile.attendance || []
+      const semRooms = rooms.filter(room => Number(room.semester) === Number(student.semester))
+      const subjectMap = new Map()
+      semRooms.forEach(room => {
+        if (!subjectMap.has(room.subject)) subjectMap.set(room.subject, { subject: room.subject, held: 0, present: 0, absent: 0, late: 0 })
+        subjectMap.get(room.subject).held += 1
+      })
+      records.forEach(record => {
+        const subject = subjectMap.get(record.subject)
+        if (!subject) return
+        if (record.status === 'present') subject.present += 1
+        else if (record.status === 'late') subject.late += 1
+        else if (record.status === 'absent') subject.absent += 1
+      })
+      const subjects = [...subjectMap.values()].map(subject => ({
+        ...subject,
+        absent: subject.absent + Math.max(0, subject.held - subject.present - subject.late - subject.absent),
+        pct: subject.held ? Math.round(subject.present / subject.held * 100) : 0,
+      }))
+      const exams = (profile.scores || []).map(score => ({ ...score, title: score.title || 'Exam', date: score.date || score.submitted_at }))
+      setSelectedStudent({
+        ...student,
+        ...profile,
+        joinedDate: profile.created_at,
+        codeSubmissions: Number(profile.code_submissions || 0),
+        exams,
+        attendance: { overall: student.attendance_pct, subjects },
+        badges: student.badges,
+      })
+    } catch (loadError) {
+      showToast(loadError.message || 'Failed to load student profile.', 'error')
+      setShowProfileModal(false)
+    } finally {
+      setProfileLoading(false)
+    }
   }
 
-  const semesterCounts = [3, 4, 5].map(semester => ({ semester, count: STUDENTS.filter(student => student.semester === semester).length }))
+  const semesterCounts = [3, 4, 5].map(semester => ({ semester, count: students.filter(student => Number(student.semester) === semester).length }))
+
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 13 }}>Loading students...</div>
 
   return (
     <div>
@@ -226,10 +307,12 @@ export default function Students() {
         @media (max-width: 680px) { .student-profile-header { align-items: flex-start !important; flex-wrap: wrap; } .student-profile-tabs { width: 100% !important; } .student-activity-grid { grid-template-columns: 1fr !important; } }
       `}</style>
 
+      {error && <div role="alert" style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', fontSize: 13 }}>{error}</div>}
+
       <header className="students-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, marginBottom: 20 }}>
         <div>
           <h1 style={{ fontFamily: headingFont, fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>Department Students</h1>
-          <p style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>{STUDENTS.length} enrolled · {atRiskStudents.length} at risk</p>
+          <p style={{ marginTop: 4, fontSize: 13, color: 'var(--muted)' }}>{students.length} enrolled · {atRiskStudents.length} at risk</p>
         </div>
         <div className="students-stats" style={{ display: 'flex', gap: 8 }}>
           {semesterCounts.map(({ semester, count }) => <span key={semester} style={{ padding: '6px 12px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{count} in Sem {semester}</span>)}
@@ -252,7 +335,7 @@ export default function Students() {
         <select aria-label="Filter by attendance" value={attendanceFilter} onChange={event => setAttendanceFilter(event.target.value)} style={{ width: 170, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)', fontSize: 13, color: 'var(--text)' }}>
           <option value="all">All Students</option><option value="below75">Below 75% ⚠️</option><option value="75to85">75% – 85%</option><option value="above85">Above 85% ✅</option>
         </select>
-        <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--muted)' }}>Showing {filteredStudents.length} of {STUDENTS.length}</span>
+        <span style={{ flexShrink: 0, fontSize: 12, color: 'var(--muted)' }}>Showing {filteredStudents.length} of {students.length}</span>
       </div>
 
       <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
@@ -267,11 +350,11 @@ export default function Students() {
                   return <tr className="students-row" key={student.id} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}>
                     <td style={pageTableCell}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><StudentAvatar student={student} /><div><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{student.name}</div><div style={{ marginTop: 2, fontFamily: monoFont, fontSize: 11, color: 'var(--muted)' }}>{student.usn}</div></div></div></td>
                     <td style={{ ...pageTableCell, color: 'var(--muted)' }}>Sem {student.semester}</td>
-                    <td style={pageTableCell}><AttendancePill percentage={student.attendance.overall} /></td>
+                    <td style={pageTableCell}>{student.attendance_pct ? <AttendancePill percentage={student.attendance_pct} /> : <span style={{ color: 'var(--muted2)' }}>—</span>}</td>
                     <td style={{ ...pageTableCell, fontFamily: monoFont, fontWeight: 700, color: average === null ? 'var(--muted2)' : getScoreColor(average) }}>{average === null ? '—' : `${average}%`}</td>
                     <td style={{ ...pageTableCell, fontFamily: monoFont, color: rankColor }}>#{student.rank}</td>
                     <td style={pageTableCell}>{student.badges.length ? <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>{student.badges.slice(0, 2).map(badge => <span key={badge} style={{ padding: '2px 8px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 11 }}>{badge}</span>)}{student.badges.length > 2 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+{student.badges.length - 2} more</span>}</div> : <span style={{ color: 'var(--muted2)' }}>—</span>}</td>
-                    <td style={pageTableCell}><button className="students-view" type="button" onClick={() => { setSelectedStudent(student); setActiveProfileTab('attendance'); setShowProfileModal(true) }} style={{ padding: '6px 12px', border: 0, borderRadius: 6, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>View Profile</button></td>
+                    <td style={pageTableCell}><button className="students-view" type="button" onClick={() => showProfile(student)} style={{ padding: '6px 12px', border: 0, borderRadius: 6, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>View Profile</button></td>
                   </tr>
                 })}
               </tbody>
@@ -281,7 +364,7 @@ export default function Students() {
       </div>
 
       <Modal isOpen={showProfileModal} onClose={closeProfile} title="Student Profile" size="lg">
-        <StudentProfile student={selectedStudent} activeTab={activeProfileTab} onTabChange={setActiveProfileTab} />
+        {profileLoading ? <div style={{ display: 'grid', placeItems: 'center', height: 200, color: 'var(--muted)', fontSize: 13 }}>Loading profile...</div> : <StudentProfile student={selectedStudent} activeTab={activeProfileTab} onTabChange={setActiveProfileTab} />}
       </Modal>
     </div>
   )

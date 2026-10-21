@@ -1,11 +1,5 @@
-import { useMemo, useState } from 'react'
-import {
-  TEACHERS,
-  ALERTS_SENT,
-  STUDENTS,
-  getAtRiskStudents,
-  getPendingTeachers,
-} from '../data/mockData'
+import { useMemo, useState, useEffect } from 'react'
+import { getStudents, getRooms, sendAlert as saveAlert } from '../api'
 import { useToast } from '../components/AlertToast'
 import { useHOD } from '../context/HODContext'
 
@@ -58,8 +52,11 @@ function SectionHeader({ children, right }) {
 
 export default function Alerts() {
   const showToast = useToast()
-  const { teachers } = useHOD()
-  const [alertHistory, setAlertHistory] = useState(() => [...ALERTS_SENT])
+  const { teachers, notifyTeacherAlert } = useHOD()
+  const [students, setStudents] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [alertHistory, setAlertHistory] = useState([])
+  const [loading, setLoading] = useState(true)
   const [selectedTeacher, setSelectedTeacher] = useState('all')
   const [alertType, setAlertType] = useState('reminder')
   const [alertMessage, setAlertMessage] = useState('')
@@ -67,8 +64,26 @@ export default function Alerts() {
   const [historyFilter, setHistoryFilter] = useState('all')
 
   const approvedTeachers = teachers.filter(t => t.status === 'approved')
-  const atRiskStudents = useMemo(() => getAtRiskStudents(), [])
-  const pendingTeachers = useMemo(() => getPendingTeachers(), [])
+  useEffect(() => {
+    let active = true
+    Promise.all([getStudents(), getRooms()])
+      .then(([studentRows, roomRows]) => {
+        if (!active) return
+        setStudents(Array.isArray(studentRows) ? studentRows : [])
+        setRooms(Array.isArray(roomRows) ? roomRows : [])
+      })
+      .catch(error => { if (active) showToast(error.message || 'Failed to load alert context.', 'error') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [showToast])
+
+  const studentsWithAttendance = useMemo(() => students.map(student => {
+    const sessions = rooms.filter(room => Number(room.semester) === Number(student.semester)).length
+    const attendance = sessions ? Math.min(100, Math.round(Number(student.classes_attended || 0) / sessions * 100)) : 0
+    return { ...student, attendance_pct: attendance }
+  }), [students, rooms])
+  const atRiskStudents = studentsWithAttendance.filter(student => student.attendance_pct > 0 && student.attendance_pct < 75)
+  const pendingTeachers = teachers.filter(teacher => teacher.status === 'pending')
 
   const filteredHistory = useMemo(() => {
     if (historyFilter === 'all') return alertHistory
@@ -81,9 +96,9 @@ export default function Alerts() {
     atRiskStudents.forEach(student => {
       alerts.push({
         id: `auto-${student.id}`,
-        type: student.attendance.overall < 60 ? 'urgent' : 'warning',
+        type: student.attendance_pct < 60 ? 'urgent' : 'warning',
         category: 'attendance',
-        message: `${student.name} (${student.usn}) has only ${student.attendance.overall}% attendance in Semester ${student.semester}. Minimum 75% required.`,
+        message: `${student.name} (${student.usn}) has only ${student.attendance_pct}% attendance in Semester ${student.semester}. Minimum 75% required.`,
         student: student.name,
         action: 'View Student',
       })
@@ -114,21 +129,29 @@ export default function Alerts() {
     })
 
     return alerts
-  }, [atRiskStudents, pendingTeachers, approvedTeachers])
+  }, [studentsWithAttendance, rooms, pendingTeachers, approvedTeachers])
 
   const urgentCount = autoAlerts.filter(alert => alert.type === 'urgent').length
   const warningCount = autoAlerts.filter(alert => alert.type === 'warning').length
   const hasHistoryFilter = historyFilter !== 'all'
   const messageTooLong = alertMessage.length > 250
 
-  const handleSendAlert = () => {
+  const handleSendAlert = async () => {
     if (alertMessage.trim().length < 5 || isSending) return
     setIsSending(true)
-
-    setTimeout(() => {
+    try {
       const recipientName = selectedTeacher === 'all'
         ? 'All Teachers'
         : approvedTeachers.find(teacher => teacher.id === parseInt(selectedTeacher, 10))?.name || 'Unknown'
+      const recipients = selectedTeacher === 'all'
+        ? approvedTeachers
+        : approvedTeachers.filter(teacher => teacher.id === parseInt(selectedTeacher, 10))
+      if (!recipients.length) throw new Error('No approved teachers are available to receive this alert.')
+
+      for (const teacher of recipients) {
+        await saveAlert({ teacher_id: teacher.id, message: alertMessage.trim(), type: alertType })
+        notifyTeacherAlert(teacher.id, alertMessage.trim(), alertType)
+      }
       const newAlert = {
         id: Date.now(),
         to: recipientName,
@@ -144,9 +167,12 @@ export default function Alerts() {
       setAlertMessage('')
       setSelectedTeacher('all')
       setAlertType('reminder')
-      setIsSending(false)
       showToast(`Alert sent to ${recipientName} 📨`, 'success')
-    }, 600)
+    } catch (error) {
+      showToast(error.message || 'Failed to send alert.', 'error')
+    } finally {
+      setIsSending(false)
+    }
   }
 
   const categoryLabel = category => ({
@@ -154,6 +180,8 @@ export default function Alerts() {
     approval: '👨‍🏫 Teacher Approval',
     inactivity: '📅 Teacher Inactivity',
   }[category] || 'System Alert')
+
+  if (loading) return <div style={{ display: 'grid', placeItems: 'center', height: '60vh', color: 'var(--muted)', fontSize: 13 }}>Loading alert data...</div>
 
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', color: 'var(--text)' }}>

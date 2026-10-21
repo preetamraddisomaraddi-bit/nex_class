@@ -29,3 +29,14 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
   }
   return data
 }
+
+// Small page-level helpers keep the server contract in one place. Responses
+// are returned directly (the API uses fetch, not an Axios response wrapper).
+export const getTeachers = () => apiRequest('/teachers')
+export const getTeacherDetail = id => apiRequest(`/teachers/${id}`)
+export const getStudents = () => apiRequest('/students')
+export const getStudentProfile = id => apiRequest(`/students/${id}`)
+export const getRooms = () => apiRequest('/rooms')
+export const getRoomDetail = code => apiRequest(`/rooms/${encodeURIComponent(code)}`)
+export const getAttendanceSummary = () => apiRequest('/attendance/summary')
+export const sendAlert = data => apiRequest('/alerts', { method: 'POST', body: data })

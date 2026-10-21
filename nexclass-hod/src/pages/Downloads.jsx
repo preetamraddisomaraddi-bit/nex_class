@@ -1,15 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import jsPDF from 'jspdf'
-import {
-  HOD,
-  STUDENTS,
-  TEACHERS,
-  SESSION_LOGS,
-  MONTHLY_STATS,
-  getAtRiskStudents,
-  getDeptAvgAttendance,
-  getDeptAvgScore,
-} from '../data/mockData'
+import { getTeachers, getStudents, getRooms, getStudentProfile } from '../api'
 import { useToast } from '../components/AlertToast'
 
 const toCSV = (headers, rows) => {
@@ -23,52 +14,46 @@ const toCSV = (headers, rows) => {
 const formatDate = (date, options) => new Date(date).toLocaleDateString('en-IN', options)
 const reportDate = () => new Date().toISOString().slice(0, 10)
 
-const buildStudentCSV = semesterFilter => {
+const buildStudentCSV = (semesterFilter, allStudents) => {
   const students = semesterFilter === 'all'
-    ? STUDENTS
-    : STUDENTS.filter(student => student.semester === Number.parseInt(semesterFilter, 10))
+    ? allStudents
+    : allStudents.filter(student => Number(student.semester) === Number.parseInt(semesterFilter, 10))
   return toCSV(
     ['Name', 'USN', 'Semester', 'Email', 'Attendance%', 'AvgScore', 'Badges', 'Joined'],
     students.map(student => {
-      const scores = student.exams.map(exam => Math.round((exam.score / exam.total) * 100))
-      const average = scores.length ? `${Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)}%` : 'N/A'
       return {
         Name: student.name,
         USN: student.usn,
         Semester: `Sem ${student.semester}`,
-        Email: student.email,
-        'Attendance%': `${student.attendance.overall}%`,
-        AvgScore: average,
+        Email: student.email || '—',
+        'Attendance%': student.attendance_pct ? `${student.attendance_pct}%` : '—',
+        AvgScore: student.avg_score == null ? '—' : `${Math.round(Number(student.avg_score))}%`,
         Badges: student.badges.join('; ') || 'None',
-        Joined: formatDate(student.joinedDate),
+        Joined: formatDate(student.created_at),
       }
     }),
   )
 }
 
-const buildAttendanceCSV = semesterFilter => {
+const buildAttendanceCSV = (semesterFilter, allStudents) => {
   const students = semesterFilter === 'all'
-    ? STUDENTS
-    : STUDENTS.filter(student => student.semester === Number.parseInt(semesterFilter, 10))
-  const rows = students.flatMap(student => student.attendance.subjects.map(subject => ({
+    ? allStudents
+    : allStudents.filter(student => Number(student.semester) === Number.parseInt(semesterFilter, 10))
+  const rows = students.map(student => ({
     Name: student.name,
     USN: student.usn,
     Semester: `Sem ${student.semester}`,
-    Subject: subject.subject,
-    'Classes Held': subject.held,
-    Present: subject.present,
-    Absent: subject.absent,
-    Late: subject.late,
-    'Attendance%': `${subject.pct}%`,
-    Status: subject.pct >= 75 ? 'Satisfactory' : 'At Risk',
-  })))
-  return toCSV(['Name', 'USN', 'Semester', 'Subject', 'Classes Held', 'Present', 'Absent', 'Late', 'Attendance%', 'Status'], rows)
+    'Classes Attended': Number(student.classes_attended || 0),
+    'Attendance%': student.attendance_pct ? `${student.attendance_pct}%` : '—',
+    Status: student.attendance_pct >= 75 ? 'Satisfactory' : student.attendance_pct > 0 ? 'At Risk' : 'No session data',
+  }))
+  return toCSV(['Name', 'USN', 'Semester', 'Classes Attended', 'Attendance%', 'Status'], rows)
 }
 
-const buildExamCSV = (semesterFilter, subjectFilter) => {
+const buildExamCSV = (semesterFilter, subjectFilter, allStudents) => {
   const students = semesterFilter === 'all'
-    ? STUDENTS
-    : STUDENTS.filter(student => student.semester === Number.parseInt(semesterFilter, 10))
+    ? allStudents
+    : allStudents.filter(student => Number(student.semester) === Number.parseInt(semesterFilter, 10))
   const rows = students.flatMap(student => student.exams
     .filter(exam => subjectFilter === 'all' || exam.subject === subjectFilter)
     .map(exam => {
@@ -89,60 +74,60 @@ const buildExamCSV = (semesterFilter, subjectFilter) => {
   return toCSV(['Name', 'USN', 'Semester', 'Exam Title', 'Subject', 'Date', 'Score', 'Total', 'Percentage', 'Grade'], rows)
 }
 
-const buildTeacherCSV = () => toCSV(
+const buildTeacherCSV = teachers => toCSV(
   ['Name', 'Employee ID', 'Subject', 'Semester', 'Status', 'Total Classes', 'Avg Duration (mins)', 'Students Taught', 'Notes Pushed', 'Last Active'],
-  TEACHERS.map(teacher => ({
+  teachers.map(teacher => ({
     Name: teacher.name,
-    'Employee ID': teacher.employeeId,
-    Subject: teacher.subject,
-    Semester: `Sem ${teacher.semester}`,
-    Status: teacher.status === 'approved' ? 'Approved' : 'Pending',
-    'Total Classes': teacher.totalClasses,
-    'Avg Duration (mins)': teacher.avgDuration || 'N/A',
-    'Students Taught': teacher.totalStudentsTaught,
-    'Notes Pushed': teacher.totalNotesPushed,
-    'Last Active': teacher.lastActive ? formatDate(teacher.lastActive) : 'Never',
+    'Employee ID': teacher.employee_id,
+    Subject: teacher.subject || '—',
+    Semester: teacher.semester ? `Sem ${teacher.semester}` : '—',
+    Status: teacher.status,
+    'Total Classes': Number(teacher.total_classes || 0),
+    'Avg Duration (mins)': 'N/A',
+    'Students Taught': '—',
+    'Notes Pushed': '—',
+    'Last Active': teacher.last_active ? formatDate(teacher.last_active) : 'Never',
   })),
 )
 
-const buildSessionCSV = () => toCSV(
+const buildSessionCSV = rooms => toCSV(
   ['Room Code', 'Subject', 'Teacher', 'Semester', 'Date', 'Duration (mins)', 'Students Present', 'Total Students', 'Attendance%', 'Notes Count', 'Exams Count', 'Status'],
-  SESSION_LOGS.map(session => ({
-    'Room Code': session.roomCode,
-    Subject: session.subject,
-    Teacher: session.teacher,
-    Semester: `Sem ${session.semester}`,
-    Date: formatDate(session.date),
-    'Duration (mins)': session.duration,
-    'Students Present': session.studentsPresent,
-    'Total Students': session.totalStudents,
-    'Attendance%': `${Math.round((session.studentsPresent / session.totalStudents) * 100)}%`,
-    'Notes Count': session.notesCount,
-    'Exams Count': session.examsConducted,
-    Status: session.status,
+  rooms.map(room => ({
+    'Room Code': room.code,
+    Subject: room.subject,
+    Teacher: room.teacher_name || '—',
+    Semester: room.semester ? `Sem ${room.semester}` : '—',
+    Date: formatDate(room.created_at),
+    'Duration (mins)': room.ended_at ? Math.max(0, Math.round((new Date(room.ended_at) - new Date(room.created_at)) / 60000)) : 'Ongoing',
+    'Students Present': Number(room.students_present || 0),
+    'Total Students': '—',
+    'Attendance%': '—',
+    'Notes Count': Number(room.notes_count || 0),
+    'Exams Count': Number(room.exams_count || 0),
+    Status: room.status,
   })),
 )
 
-const buildAtRiskCSV = () => {
-  const students = getAtRiskStudents()
+const buildAtRiskCSV = students => {
   return toCSV(
     ['Name', 'USN', 'Semester', 'Overall%', 'Worst Subject', 'Worst Subject%', 'Status'],
     students.map(student => {
-      const worstSubject = student.attendance.subjects.reduce((worst, subject) => subject.pct < worst.pct ? subject : worst)
+      const subjects = student.attendance?.subjects || []
+      const worstSubject = subjects.reduce((worst, subject) => subject.pct < worst.pct ? subject : worst, subjects[0])
       return {
         Name: student.name,
         USN: student.usn,
         Semester: `Sem ${student.semester}`,
-        'Overall%': `${student.attendance.overall}%`,
+        'Overall%': `${student.attendance_pct}%`,
         'Worst Subject': worstSubject?.subject || 'N/A',
         'Worst Subject%': worstSubject ? `${worstSubject.pct}%` : 'N/A',
-        Status: student.attendance.overall < 60 ? 'Critical' : 'At Risk',
+        Status: student.attendance_pct < 60 ? 'Critical' : 'At Risk',
       }
     }),
   )
 }
 
-const buildFullReportPDF = () => {
+const buildFullReportPDF = ({ students, teachers, rooms, atRisk, deptAttendance, deptScore, hod }) => {
   const doc = new jsPDF()
   const pageWidth = doc.internal.pageSize.getWidth()
   const pageHeight = doc.internal.pageSize.getHeight()
@@ -161,7 +146,7 @@ const buildFullReportPDF = () => {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(11)
   doc.text('Department Performance Report', margin, 22)
-  doc.text(HOD.department, margin, 30)
+  doc.text(hod.department || 'Department', margin, 30)
   doc.text(formatDate(new Date(), { day: 'numeric', month: 'long', year: 'numeric' }), pageWidth - margin, 22, { align: 'right' })
 
   doc.setTextColor(25, 30, 45)
@@ -171,9 +156,9 @@ const buildFullReportPDF = () => {
   line(51)
   doc.setFontSize(10)
   const details = [
-    ['University', HOD.university],
-    ['Department', HOD.department],
-    ['HOD', HOD.name],
+    ['University', hod.university || '—'],
+    ['Department', hod.department || '—'],
+    ['HOD', hod.name || '—'],
     ['Academic Year', '2024-25'],
     ['Report Generated', new Date().toLocaleString('en-IN')],
   ]
@@ -190,12 +175,12 @@ const buildFullReportPDF = () => {
   doc.text('Key Statistics', margin, 102)
   line(105)
   const stats = [
-    ['Total Students', STUDENTS.length],
-    ['Approved Teachers', TEACHERS.filter(teacher => teacher.status === 'approved').length],
-    ['Total Sessions', SESSION_LOGS.length],
-    ['Department Attendance', `${getDeptAvgAttendance()}%`],
-    ['Department Average Score', `${getDeptAvgScore()}%`],
-    ['At-Risk Students', getAtRiskStudents().length],
+    ['Total Students', students.length],
+    ['Approved Teachers', teachers.filter(teacher => teacher.status === 'approved').length],
+    ['Total Sessions', rooms.length],
+    ['Department Attendance', `${deptAttendance}%`],
+    ['Department Average Score', `${deptScore}%`],
+    ['At-Risk Students', atRisk.length],
   ]
   stats.forEach(([label, value], index) => {
     const x = index % 2 === 0 ? margin : pageWidth / 2 + 5
@@ -220,7 +205,6 @@ const buildFullReportPDF = () => {
   doc.setFontSize(13)
   doc.text('At-Risk Students', margin, 25)
   line(28)
-  const atRisk = getAtRiskStudents()
   const columns = [17, 72, 112, 137, 170]
   doc.setFillColor(240, 240, 245)
   doc.rect(margin, 32, pageWidth - margin * 2, 8, 'F')
@@ -241,8 +225,8 @@ const buildFullReportPDF = () => {
       doc.text(student.usn, columns[1], y)
       doc.text(`Sem ${student.semester}`, columns[2], y)
       doc.setTextColor(220, 38, 38)
-      doc.text(`${student.attendance.overall}%`, columns[3], y)
-      doc.text(student.attendance.overall < 60 ? 'Critical' : 'At Risk', columns[4], y)
+      doc.text(`${student.attendance_pct}%`, columns[3], y)
+      doc.text(student.attendance_pct < 60 ? 'Critical' : 'At Risk', columns[4], y)
       doc.setTextColor(25, 30, 45)
     })
   }
@@ -252,7 +236,7 @@ const buildFullReportPDF = () => {
   doc.setFontSize(13)
   doc.text('Teacher Summary', margin, teacherY)
   line(teacherY + 3)
-  const approved = TEACHERS.filter(teacher => teacher.status === 'approved')
+  const approved = teachers.filter(teacher => teacher.status === 'approved')
   const tableY = teacherY + 10
   doc.setFillColor(240, 240, 245)
   doc.rect(margin, tableY - 6, pageWidth - margin * 2, 8, 'F')
@@ -263,10 +247,10 @@ const buildFullReportPDF = () => {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.text(teacher.name.replace('Prof. ', ''), 17, y)
-    doc.text(teacher.subject.slice(0, 18), 72, y)
-    doc.text(String(teacher.totalClasses), 126, y)
-    doc.text(teacher.avgDuration ? `${teacher.avgDuration}m` : 'N/A', 147, y)
-    doc.text(String(teacher.totalStudentsTaught), 174, y)
+    doc.text((teacher.subject || '—').slice(0, 18), 72, y)
+    doc.text(String(teacher.total_classes || 0), 126, y)
+    doc.text('N/A', 147, y)
+    doc.text('—', 174, y)
   })
 
   const pageCount = doc.internal.getNumberOfPages()
@@ -275,7 +259,7 @@ const buildFullReportPDF = () => {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(140, 140, 140)
-    doc.text(`NexClass HOD Portal | ${HOD.department} | Page ${page} of ${pageCount}`, pageWidth / 2, pageHeight - 8, { align: 'center' })
+    doc.text(`NexClass HOD Portal | ${hod.department || 'Department'} | Page ${page} of ${pageCount}`, pageWidth / 2, pageHeight - 8, { align: 'center' })
   }
 
   return doc.output('datauristring').split(',')[1]
@@ -312,22 +296,82 @@ function DownloadCard({ icon, iconBg, title, description, filters, preview, butt
 
 export default function Downloads() {
   const showToast = useToast()
+  const [teachers, setTeachers] = useState([])
+  const [students, setStudents] = useState([])
+  const [rooms, setRooms] = useState([])
+  const [dataLoading, setDataLoading] = useState(true)
+  const [dataError, setDataError] = useState('')
   const [downloading, setDownloading] = useState({})
   const [attSemFilter, setAttSemFilter] = useState('all')
   const [examSemFilter, setExamSemFilter] = useState('all')
   const [examSubFilter, setExamSubFilter] = useState('all')
 
+  useEffect(() => {
+    let active = true
+    Promise.all([getTeachers(), getStudents(), getRooms()])
+      .then(async ([teacherRows, studentRows, roomRows]) => {
+        const baseStudents = Array.isArray(studentRows) ? studentRows : []
+        const roomList = Array.isArray(roomRows) ? roomRows : []
+        const profiles = await Promise.all(baseStudents.map(student => getStudentProfile(student.id).catch(() => null)))
+        if (!active) return
+        const enriched = baseStudents.map((student, index) => {
+          const profile = profiles[index] || {}
+          const semRooms = roomList.filter(room => Number(room.semester) === Number(student.semester))
+          const attendancePct = semRooms.length ? Math.min(100, Math.round(Number(student.classes_attended || 0) / semRooms.length * 100)) : 0
+          const records = profile.attendance || []
+          const subjectMap = new Map()
+          semRooms.forEach(room => {
+            if (!subjectMap.has(room.subject)) subjectMap.set(room.subject, { subject: room.subject, held: 0, present: 0, absent: 0, late: 0 })
+            subjectMap.get(room.subject).held += 1
+          })
+          records.forEach(record => {
+            const subject = subjectMap.get(record.subject)
+            if (subject && record.status === 'present') subject.present += 1
+            else if (subject && record.status === 'late') subject.late += 1
+          })
+          const subjects = [...subjectMap.values()].map(subject => ({ ...subject, absent: Math.max(0, subject.held - subject.present - subject.late), pct: subject.held ? Math.round(subject.present / subject.held * 100) : 0 }))
+          const exams = (profile.scores || []).map(score => ({ ...score, title: score.title || 'Exam', date: score.date || score.submitted_at }))
+          return { ...student, attendance_pct: attendancePct, attendance: { overall: attendancePct, subjects }, exams, badges: [], codeSubmissions: Number(profile.code_submissions || student.code_submissions || 0) }
+        }).sort((a, b) => Number(b.avg_score || 0) - Number(a.avg_score || 0))
+        const ranked = enriched.map((student, index) => {
+          const badges = []
+          if (student.attendance_pct >= 75) badges.push('Attendance Star')
+          if (student.codeSubmissions >= 1) badges.push('Coding Champ')
+          if (student.codeSubmissions >= 3) badges.push('Fast Learner')
+          if (student.exams.some(exam => exam.total && exam.score / exam.total >= 0.8)) badges.push('Exam Ace')
+          if (student.exams.some(exam => exam.score === exam.total)) badges.push('Perfect Score')
+          if (index === 0 && student.avg_score != null) badges.push('Top Performer')
+          if (Number(student.classes_attended || 0) >= 10) badges.push('Consistent')
+          return { ...student, badges }
+        })
+        setTeachers(Array.isArray(teacherRows) ? teacherRows : [])
+        setStudents(ranked)
+        setRooms(roomList)
+      })
+      .catch(error => { if (active) setDataError(error.message || 'Failed to load report data.') })
+      .finally(() => { if (active) setDataLoading(false) })
+    return () => { active = false }
+  }, [])
+
   const filteredAttendanceStudents = attSemFilter === 'all'
-    ? STUDENTS
-    : STUDENTS.filter(student => student.semester === Number.parseInt(attSemFilter, 10))
+    ? students
+    : students.filter(student => Number(student.semester) === Number.parseInt(attSemFilter, 10))
   const previewStudents = filteredAttendanceStudents
-  const attendanceRows = filteredAttendanceStudents.reduce((sum, student) => sum + student.attendance.subjects.length, 0)
+  const attendanceRows = filteredAttendanceStudents.length
   const examStudents = examSemFilter === 'all'
-    ? STUDENTS
-    : STUDENTS.filter(student => student.semester === Number.parseInt(examSemFilter, 10))
+    ? students
+    : students.filter(student => Number(student.semester) === Number.parseInt(examSemFilter, 10))
   const examRows = examStudents.reduce((sum, student) => sum + student.exams.filter(exam => examSubFilter === 'all' || exam.subject === examSubFilter).length, 0)
-  const allSubjects = [...new Set(STUDENTS.flatMap(student => student.exams.map(exam => exam.subject)))].sort()
-  const atRiskStudents = getAtRiskStudents()
+  const allSubjects = [...new Set(students.flatMap(student => student.exams.map(exam => exam.subject).filter(Boolean)))].sort()
+  const atRiskStudents = students.filter(student => student.attendance_pct > 0 && student.attendance_pct < 75)
+  const attendanceStudents = students.filter(student => student.attendance_pct > 0)
+  const deptAttendance = attendanceStudents.length ? Math.round(attendanceStudents.reduce((sum, student) => sum + student.attendance_pct, 0) / attendanceStudents.length) : 0
+  const examScores = students.flatMap(student => student.exams.filter(exam => exam.total).map(exam => exam.score / exam.total * 100))
+  const deptScore = examScores.length ? Math.round(examScores.reduce((sum, score) => sum + score, 0) / examScores.length) : 0
+  let hod = {}
+  try { hod = JSON.parse(window.localStorage.getItem('nexclass_hod_data') || '{}') } catch { /* use report labels */ }
+
+  const buildCurrentReportPDF = () => buildFullReportPDF({ students, teachers, rooms, atRisk: atRiskStudents, deptAttendance, deptScore, hod })
 
   const downloadFile = async (filename, content, type) => {
     let payload = content
@@ -388,9 +432,12 @@ export default function Downloads() {
     </select>
   )
 
+  if (dataLoading) return <div style={{ display: 'grid', placeItems: 'center', height: '60vh', color: 'var(--muted)', fontSize: 13 }}>Loading report data...</div>
+
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', color: 'var(--text)' }}>
       <style>{`@media (max-width: 760px) { .downloads-header { align-items: flex-start !important; flex-direction: column !important; } .downloads-grid { grid-template-columns: 1fr !important; } .downloads-grid > section { grid-column: 1 !important; } }`}</style>
+      {dataError && <div role="alert" style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', fontSize: 13 }}>{dataError}</div>}
       <header className="downloads-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontFamily: '"Plus Jakarta Sans", sans-serif', fontSize: 20, fontWeight: 800 }}>Downloads &amp; Reports</h1>
@@ -405,15 +452,15 @@ export default function Downloads() {
           description="Complete list of enrolled students with attendance and scores"
           filters={semesterSelect('Student list semester', attSemFilter, setAttSemFilter)}
           preview={`${previewStudents.length} students\nFields: Name, USN, Semester, Email, Attendance%, Avg Score, Badges`}
-          buttons={csvButton('students-csv', `NexClass_Students_${attSemFilter === 'all' ? 'All' : `Sem${attSemFilter}`}_${reportDate()}.csv`, buildStudentCSV(attSemFilter))}
+          buttons={csvButton('students-csv', `NexClass_Students_${attSemFilter === 'all' ? 'All' : `Sem${attSemFilter}`}_${reportDate()}.csv`, buildStudentCSV(attSemFilter, students))}
         />
 
         <DownloadCard
           icon="📋" iconBg="var(--indigo-light)" title="Attendance Report"
           description="Subject-wise attendance breakdown for all students"
           filters={semesterSelect('Attendance semester', attSemFilter, setAttSemFilter)}
-          preview={`${attendanceRows} subject attendance records\nFields: Name, USN, Subject, Present, Absent, Attendance%, Status`}
-          buttons={csvButton('attendance-csv', `NexClass_Attendance_${reportDate()}.csv`, buildAttendanceCSV(attSemFilter))}
+          preview={`${attendanceRows} student attendance summaries\nFields: Name, USN, Semester, Classes Attended, Attendance%, Status`}
+          buttons={csvButton('attendance-csv', `NexClass_Attendance_${reportDate()}.csv`, buildAttendanceCSV(attSemFilter, students))}
         />
 
         <DownloadCard
@@ -427,14 +474,14 @@ export default function Downloads() {
             </select>
           </>}
           preview={`${examRows} exam records\nFields: Name, USN, Exam, Score, Percentage, Grade`}
-          buttons={csvButton('exams-csv', `NexClass_ExamResults_${reportDate()}.csv`, buildExamCSV(examSemFilter, examSubFilter))}
+          buttons={csvButton('exams-csv', `NexClass_ExamResults_${reportDate()}.csv`, buildExamCSV(examSemFilter, examSubFilter, students))}
         />
 
         <DownloadCard
           icon="👨‍🏫" iconBg="var(--green-light)" title="Teacher Activity Report"
           description="Sessions conducted, duration and engagement per teacher"
-          preview={`${TEACHERS.length} teachers (${TEACHERS.filter(teacher => teacher.status === 'approved').length} approved, ${TEACHERS.filter(teacher => teacher.status === 'pending').length} pending)\nFields: Name, Subject, Classes, Avg Duration, Students Taught`}
-          buttons={csvButton('teachers-csv', `NexClass_TeacherActivity_${reportDate()}.csv`, buildTeacherCSV())}
+          preview={`${teachers.length} teachers (${teachers.filter(teacher => teacher.status === 'approved').length} approved, ${teachers.filter(teacher => teacher.status === 'pending').length} pending)\nFields: Name, Subject, Classes, Avg Duration, Students Taught`}
+          buttons={csvButton('teachers-csv', `NexClass_TeacherActivity_${reportDate()}.csv`, buildTeacherCSV(teachers))}
         />
 
         <DownloadCard
@@ -443,7 +490,7 @@ export default function Downloads() {
           preview={atRiskStudents.length === 0
             ? '✅ No at-risk students currently'
             : <><div style={{ color: 'var(--red)', fontFamily: 'Inter, sans-serif', fontSize: 12 }}>{atRiskStudents.length} students at risk</div><div style={{ marginTop: 3, fontFamily: 'Inter, sans-serif', fontSize: 11, color: 'var(--red)' }}>{atRiskStudents.map(student => student.name).join(', ')}</div><div style={{ marginTop: 5 }}>Fields: Name, USN, Attendance%, Worst Subject, Status</div></>}
-          buttons={csvButton('atrisk-csv', `NexClass_AtRisk_${reportDate()}.csv`, buildAtRiskCSV(), atRiskStudents.length === 0)}
+          buttons={csvButton('atrisk-csv', `NexClass_AtRisk_${reportDate()}.csv`, buildAtRiskCSV(atRiskStudents), atRiskStudents.length === 0)}
         />
 
         <DownloadCard
@@ -458,7 +505,7 @@ export default function Downloads() {
               <span>✓ Page numbers and report date</span><span>✓ NexClass branding</span>
             </div>
           </>}
-          buttons={pdfButton('fullreport-pdf', `NexClass_DepartmentReport_${reportDate()}.pdf`, buildFullReportPDF())}
+          buttons={pdfButton('fullreport-pdf', `NexClass_DepartmentReport_${reportDate()}.pdf`, buildCurrentReportPDF())}
         />
       </div>
     </div>

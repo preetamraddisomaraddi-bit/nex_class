@@ -205,12 +205,20 @@ export function HODProvider({ children }) {
     setTeachers(previous => previous.filter(teacher => teacher.id !== teacherId))
   }
 
+  const notifyTeacherAlert = (teacherId, message, type) => {
+    socketRef.current?.emit('hod:alert', {
+      teacher_id: Number(teacherId),
+      message,
+      type,
+    })
+  }
+
   const pendingCount = teachers.filter(teacher => teacher.status === 'pending').length
 
   return (
     <HODContext.Provider value={{
       teachers, loadingTeachers, teacherLoadError, refreshTeachers,
-      approveTeacher, rejectTeacher, pendingCount, realtime
+      approveTeacher, rejectTeacher, notifyTeacherAlert, pendingCount, realtime
     }}>
       {children}
     </HODContext.Provider>

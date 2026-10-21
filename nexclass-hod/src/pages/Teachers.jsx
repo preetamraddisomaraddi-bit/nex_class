@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useHOD } from '../context/HODContext'
 import { useToast } from '../components/AlertToast'
-import { STUDENTS, SESSION_LOGS } from '../data/mockData'
+import { getTeacherDetail, sendAlert as saveAlert } from '../api'
 import Modal from '../components/Modal'
 
 const headingFont = '"Plus Jakarta Sans", sans-serif'
@@ -31,7 +31,7 @@ function getRelativeTime(dateStr) {
 
 function dateLabel(dateStr) {
   if (!dateStr) return '—'
-  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-IN', {
+  return new Date(dateStr).toLocaleDateString('en-IN', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
 }
@@ -57,14 +57,9 @@ function EmptyState({ icon, title, description }) {
 function TeacherDetail({ teacher }) {
   if (!teacher) return null
 
-  const sessionHistory = (teacher.fromServer
-    ? (teacher.sessions || [])
-    : (teacher.sessions?.length
-      ? teacher.sessions
-      : SESSION_LOGS.filter(session => session.teacherId === teacher.id))
-  ).slice(0, 5)
+  const sessionHistory = (teacher.sessions || []).slice(0, 5)
   const exams = teacher.examsConducted || []
-  const studentsTaught = teacher.totalStudentsTaught ?? STUDENTS.filter(student => student.semester === teacher.semester).length
+  const studentsTaught = teacher.totalStudentsTaught || '—'
 
   const scoreColor = score => score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--amber)' : 'var(--red)'
 
@@ -110,7 +105,7 @@ function TeacherDetail({ teacher }) {
                     <tr key={session.id}>
                       <td style={detailCell}>{dateLabel(session.date)}</td>
                       <td style={{ ...detailCell, fontFamily: monoFont, fontSize: 12, color: 'var(--indigo)' }}>{session.roomCode}</td>
-                      <td style={detailCell}>{session.duration} mins</td>
+                      <td style={detailCell}>{session.duration ? `${session.duration} mins` : '—'}</td>
                       <td style={{ ...detailCell, color: ratio >= 0.8 ? 'var(--green)' : 'var(--amber)' }}>{session.studentsPresent}/{session.totalStudents}</td>
                       <td style={detailCell}>{session.notesCount} notes</td>
                       <td style={detailCell}>{session.examsConducted > 0 ? `${session.examsConducted} exam` : '—'}</td>
@@ -150,7 +145,7 @@ function TeacherDetail({ teacher }) {
 const detailCell = { padding: '10px 12px', fontSize: 13, color: 'var(--text2)', borderBottom: '1px solid var(--border)' }
 
 export default function Teachers() {
-  const { teachers, approveTeacher, rejectTeacher } = useHOD()
+  const { teachers, approveTeacher, rejectTeacher, notifyTeacherAlert, loadingTeachers, teacherLoadError, refreshTeachers } = useHOD()
   const showToast = useToast()
   const [activeTab, setActiveTab] = useState('approved')
   const [searchQuery, setSearchQuery] = useState('')
@@ -161,13 +156,13 @@ export default function Teachers() {
   const [alertTarget, setAlertTarget] = useState(null)
   const [alertMessage, setAlertMessage] = useState('')
   const [alertType, setAlertType] = useState('reminder')
-  const [alertsSent, setAlertsSent] = useState([])
+  const [sendingAlert, setSendingAlert] = useState(false)
 
   const approvedTeachers = teachers.filter(teacher => teacher.status === 'approved')
   const pendingTeachers = teachers.filter(teacher => teacher.status === 'pending')
   const filteredApproved = useMemo(() => approvedTeachers.filter(teacher => {
     const query = searchQuery.toLowerCase()
-    const matchesSearch = teacher.name.toLowerCase().includes(query) || teacher.subject.toLowerCase().includes(query)
+    const matchesSearch = teacher.name.toLowerCase().includes(query) || (teacher.subject || '').toLowerCase().includes(query)
     const matchesSem = semesterFilter === 'all' || teacher.semester === Number.parseInt(semesterFilter, 10)
     return matchesSearch && matchesSem
   }), [approvedTeachers, searchQuery, semesterFilter])
@@ -201,23 +196,67 @@ export default function Teachers() {
       showToast(error.message || 'Unable to update this teacher.', 'error')
     }
   }
-  const sendAlert = () => {
-    if (!alertTarget || alertMessage.trim().length < 5) return
-    const newAlert = {
-      id: Date.now(),
-      to: alertTarget.name,
-      teacherId: alertTarget.id,
-      message: alertMessage,
-      sentAt: new Date().toLocaleString('en-IN'),
-      type: alertType,
+  const sendAlert = async () => {
+    if (!alertTarget || alertMessage.trim().length < 5 || sendingAlert) return
+    setSendingAlert(true)
+    try {
+      await saveAlert({ teacher_id: alertTarget.id, message: alertMessage.trim(), type: alertType })
+      notifyTeacherAlert(alertTarget.id, alertMessage.trim(), alertType)
+      showToast(`Alert sent to ${alertTarget.name} 📨`, 'success')
+      closeAlertModal()
+    } catch (error) {
+      showToast(error.message || 'Failed to send alert.', 'error')
+    } finally {
+      setSendingAlert(false)
     }
-    setAlertsSent(previous => [newAlert, ...previous])
-    showToast(`Alert sent to ${alertTarget.name} 📨`, 'info')
-    closeAlertModal()
+  }
+
+  const viewTeacherDetails = async teacher => {
+    try {
+      const detail = await getTeacherDetail(teacher.id)
+      const sessions = (detail.sessions || []).map(session => {
+        const duration = session.ended_at && session.created_at
+          ? Math.max(0, Math.round((new Date(session.ended_at) - new Date(session.created_at)) / 60000))
+          : 0
+        return {
+          id: session.id,
+          roomCode: session.code,
+          date: session.created_at,
+          duration,
+          studentsPresent: Number(session.students_present || 0),
+          totalStudents: Number(session.students_present || 0),
+          notesCount: Number(session.notes_count || 0),
+          examsConducted: Number(session.exams_count || 0),
+        }
+      })
+      const durations = sessions.filter(session => session.duration > 0).map(session => session.duration)
+      setSelectedTeacher({
+        ...teacher,
+        email: detail.email || teacher.email,
+        employeeId: detail.employee_id || teacher.employeeId,
+        totalClasses: sessions.length,
+        avgDuration: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0,
+        totalStudentsTaught: '—',
+        totalNotesPushed: sessions.reduce((sum, session) => sum + session.notesCount, 0),
+        sessions,
+        examsConducted: (detail.exams || []).map(exam => ({
+          id: exam.id,
+          title: exam.title,
+          date: exam.launched_at,
+          avgScore: exam.avg_score == null ? 0 : Math.round(Number(exam.avg_score)),
+          totalStudents: Number(exam.total_students || 0),
+        })),
+      })
+      setShowDetailModal(true)
+    } catch (error) {
+      showToast(error.message || 'Failed to load teacher details.', 'error')
+    }
   }
 
   const cardStyle = { background: 'var(--white)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', boxShadow: 'var(--shadow)' }
   const buttonBase = { border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }
+
+  if (loadingTeachers) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', flexDirection: 'column', gap: 12, color: 'var(--muted)' }}><div style={{ width: 28, height: 28, border: '3px solid var(--border)', borderTop: '3px solid var(--indigo)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /><span style={{ fontSize: 13 }}>Loading teachers...</span></div>
 
   return (
     <div>
@@ -229,6 +268,8 @@ export default function Teachers() {
         .teachers-action:hover { opacity: 0.9; }
         @media (max-width: 760px) { .teachers-header { align-items: flex-start !important; flex-direction: column; } .teachers-filter { align-items: stretch !important; flex-direction: column; } .teachers-filter select { width: 100% !important; } }
       `}</style>
+
+      {teacherLoadError && <div role="alert" style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', fontSize: 13 }}>{teacherLoadError} <button type="button" onClick={() => refreshTeachers().catch(() => {})} style={{ marginLeft: 8, border: 0, background: 'transparent', color: 'inherit', fontWeight: 700, cursor: 'pointer' }}>Retry</button></div>}
 
       <header className="teachers-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, marginBottom: 24 }}>
         <div>
@@ -279,7 +320,7 @@ export default function Teachers() {
                           <td style={{ ...tableCell, fontFamily: monoFont }}>{teacher.avgDuration > 0 ? `${teacher.avgDuration} mins` : '—'}</td>
                           <td style={{ ...tableCell, color: activityColor, whiteSpace: 'nowrap' }}>{getRelativeTime(teacher.lastActive)}</td>
                           <td style={tableCell}><div style={{ display: 'flex', gap: 6 }}>
-                            <button className="teachers-view" type="button" onClick={() => { setSelectedTeacher(teacher); setShowDetailModal(true) }} style={{ ...buttonBase, background: 'var(--indigo-light)', color: 'var(--indigo)' }}>View Details</button>
+                            <button className="teachers-view" type="button" onClick={() => viewTeacherDetails(teacher)} style={{ ...buttonBase, background: 'var(--indigo-light)', color: 'var(--indigo)' }}>View Details</button>
                             <button className="teachers-alert" type="button" onClick={() => { setAlertTarget(teacher); setShowAlertModal(true) }} style={{ ...buttonBase, background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)' }}>Send Alert</button>
                           </div></td>
                         </tr>
@@ -304,7 +345,7 @@ export default function Teachers() {
                       <td style={{ ...tableCell, fontFamily: monoFont, color: 'var(--text2)' }}>{teacher.employeeId}</td>
                       <td style={tableCell}><span style={{ padding: '3px 10px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 12 }}>{teacher.subject}</span></td>
                       <td style={{ ...tableCell, color: 'var(--text2)' }}>Sem {teacher.semester}</td>
-                      <td style={{ ...tableCell, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{new Date(`${teacher.joinedDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                      <td style={{ ...tableCell, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{teacher.joinedDate ? new Date(teacher.joinedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
                       <td style={tableCell}><div style={{ display: 'flex', gap: 8 }}>
                         <button className="teachers-action" type="button" onClick={() => reviewTeacher(teacher, 'approve')} style={{ ...buttonBase, padding: '6px 14px', background: 'var(--green)', color: 'white' }}>✅ Approve</button>
                         <button className="teachers-action" type="button" onClick={() => reviewTeacher(teacher, 'reject')} style={{ ...buttonBase, padding: '6px 14px', background: 'transparent', border: '1px solid var(--red)', color: 'var(--red)' }}>❌ Reject</button>
@@ -336,12 +377,11 @@ export default function Teachers() {
             <label htmlFor="alert-message" style={formLabel}>MESSAGE</label>
             <textarea id="alert-message" maxLength={200} value={alertMessage} onChange={event => setAlertMessage(event.target.value)} placeholder={`Type your message to ${alertTarget.name}...`} style={{ ...formControl, height: 100, padding: '10px 12px', resize: 'none', fontFamily: 'Inter, sans-serif' }} />
             <div style={{ marginTop: 4, textAlign: 'right', fontSize: 11, color: 'var(--muted)' }}>{alertMessage.length}/200 characters</div>
-            <button type="button" onClick={sendAlert} disabled={alertMessage.trim().length < 5} style={{ width: '100%', marginTop: 20, padding: 11, background: 'var(--indigo)', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: alertMessage.trim().length < 5 ? 'not-allowed' : 'pointer', opacity: alertMessage.trim().length < 5 ? 0.5 : 1 }}>Send Alert</button>
+            <button type="button" onClick={sendAlert} disabled={alertMessage.trim().length < 5 || sendingAlert} style={{ width: '100%', marginTop: 20, padding: 11, background: 'var(--indigo)', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: alertMessage.trim().length < 5 || sendingAlert ? 'not-allowed' : 'pointer', opacity: alertMessage.trim().length < 5 || sendingAlert ? 0.5 : 1 }}>{sendingAlert ? 'Sending…' : 'Send Alert'}</button>
           </>
         )}
       </Modal>
 
-      {alertsSent.length > 0 && <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>{alertsSent.length} alerts sent</span>}
     </div>
   )
 }

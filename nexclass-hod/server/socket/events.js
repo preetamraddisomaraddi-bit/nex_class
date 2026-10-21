@@ -138,7 +138,8 @@ module.exports = function registerEvents(io) {
       const message = String(data.message || '').trim().slice(0, 2000)
       if (!teacherId || !message) return
       const type = ['reminder', 'warning', 'urgent'].includes(data.type) ? data.type : 'reminder'
-      dbRun('INSERT INTO alerts(teacher_id,message,type) VALUES(?,?,?)', [teacherId, message, type])
+      // Alert rows are persisted by the authenticated REST endpoint. The
+      // socket event only delivers the already-saved alert in real time.
       for (const [sid, teacher] of onlineTeachers) if (teacher.id === teacherId) io.to(sid).emit('hod:alert', { message, type, from: 'HOD', sent_at: new Date().toISOString() })
     })
     socket.on('hod:teacher-approved', (data = {}) => {
