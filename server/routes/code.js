@@ -1,35 +1,55 @@
 const express = require('express');
 const router = express.Router();
-const { dbAll, dbRun } = require('../db/database');
+const { dbGet, dbAll, dbRun } = require('../db/database');
+const { verifyTeacher, verifyStudent } = require('../middleware/auth');
 
-router.post('/submit', async (req, res) => {
+router.post('/submit', verifyStudent, async (req, res) => {
   try {
-    const { student_id, room_id, code, language, output } = req.body;
-    if (!student_id || !room_id || !code || !language) return res.status(400).json({ error: 'All fields required' });
+    const { room_id, code, language, output } = req.body;
+    if (!room_id || !code || !language) return res.status(400).json({ error: 'room_id, code, and language required' });
+    if (String(code).length > 50000) return res.status(413).json({ error: 'Code submission is too large' });
+    const room = await dbGet("SELECT id, code as room_code FROM rooms WHERE id = ? AND status = 'active'", [room_id]);
+    if (!room) return res.status(404).json({ error: 'Active room not found' });
     const result = await dbRun(
       'INSERT INTO code_submissions (student_id, room_id, code, language, output) VALUES (?, ?, ?, ?, ?)',
-      [student_id, room_id, code, language, output || '']
+      [req.user.id, room_id, String(code), String(language), String(output || '').slice(0, 20000)]
     );
-    res.json({ id: result.lastID, success: true });
+    const submission = await dbGet('SELECT cs.*, s.name, s.roll_no, s.usn, s.avatar_color FROM code_submissions cs JOIN students s ON s.id = cs.student_id WHERE cs.id = ?', [result.lastID]);
+    req.app.get('io')?.to(room.room_code.toUpperCase()).emit('code:submission', { ...submission, room_code: room.room_code });
+    res.status(201).json({ id: result.lastID, success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/room/:room_id', async (req, res) => {
+router.get('/room/:room_id', verifyTeacher, async (req, res) => {
   try {
+    const room = await dbGet('SELECT id FROM rooms WHERE id = ? AND teacher_id = ?', [req.params.room_id, req.user.id]);
+    if (!room) return res.status(404).json({ error: 'Room not found for this teacher' });
     const submissions = await dbAll(
-      `SELECT cs.*, s.name, s.roll_no, s.avatar_color FROM code_submissions cs JOIN students s ON cs.student_id = s.id WHERE cs.room_id = ? ORDER BY cs.submitted_at DESC`,
-      [req.params.room_id]
-    );
+      `SELECT cs.*, s.name, s.roll_no, s.usn, s.avatar_color FROM code_submissions cs JOIN students s ON cs.student_id = s.id
+       WHERE cs.room_id = ? ORDER BY cs.submitted_at DESC`, [room.id]);
     res.json({ submissions });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/student/:student_id', async (req, res) => {
+router.patch('/:submission_id/review', verifyTeacher, async (req, res) => {
   try {
+    const submission = await dbGet('SELECT cs.* FROM code_submissions cs JOIN rooms r ON r.id = cs.room_id WHERE cs.id = ? AND r.teacher_id = ?', [req.params.submission_id, req.user.id]);
+    if (!submission) return res.status(404).json({ error: 'Code submission not found for this teacher' });
+    const grade = req.body.grade === '' || req.body.grade === undefined || req.body.grade === null ? null : Number(req.body.grade);
+    if (grade !== null && (!Number.isFinite(grade) || grade < 0 || grade > 100)) return res.status(400).json({ error: 'Grade must be between 0 and 100' });
+    const feedback = String(req.body.feedback || '').slice(0, 4000);
+    const status = grade === null ? 'reviewed' : 'graded';
+    await dbRun('UPDATE code_submissions SET grade = ?, feedback = ?, status = ?, graded_by = ?, graded_at = CURRENT_TIMESTAMP WHERE id = ?', [grade, feedback, status, req.user.id, submission.id]);
+    res.json({ success: true, grade, feedback, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/student/:student_id', verifyStudent, async (req, res) => {
+  try {
+    if (Number(req.params.student_id) !== Number(req.user.id)) return res.status(403).json({ error: 'Student access required' });
     const submissions = await dbAll(
-      `SELECT cs.*, r.subject, r.class_name FROM code_submissions cs JOIN rooms r ON cs.room_id = r.id WHERE cs.student_id = ? ORDER BY cs.submitted_at DESC`,
-      [req.params.student_id]
-    );
+      `SELECT cs.id, cs.student_id, cs.room_id, cs.language, cs.grade, cs.feedback, cs.status, cs.submitted_at, r.subject, r.class_name
+       FROM code_submissions cs JOIN rooms r ON cs.room_id = r.id WHERE cs.student_id = ? ORDER BY cs.submitted_at DESC`, [req.user.id]);
     res.json({ submissions });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

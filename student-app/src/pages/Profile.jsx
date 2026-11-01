@@ -32,7 +32,7 @@ export default function Profile() {
       ])
       const fullProfile = profileRes.data
       const attendanceRecords = Array.isArray(attRes.data) ? attRes.data : (fullProfile.attendance || [])
-      const scores = Array.isArray(scoreRes.data) ? scoreRes.data : (fullProfile.scores || [])
+      const scores = Array.isArray(scoreRes.data) ? scoreRes.data : (scoreRes.data.history || fullProfile.scores || [])
       const present = attendanceRecords.filter(record => record.status === 'present').length
       setAttStats({
         total: attendanceRecords.length,
@@ -42,7 +42,7 @@ export default function Profile() {
       })
       setExamHistory(scores.map(score => ({
         ...score,
-        percentage: score.total ? Math.round((score.score / score.total) * 100) : 0,
+        percentage: score.percentage ?? (score.total ? Math.round((score.score / score.total) * 100) : null),
         title: score.title || 'Exam',
         pushed_at: score.submitted_at || score.exam_date
       })))
@@ -194,9 +194,11 @@ export default function Profile() {
   const monthlyLogs = getMonthlyLogs()
 
   // Exam stats calculations
-  const totalPercentage = examHistory.reduce((acc, h) => acc + (h.percentage || 0), 0)
-  const avgExamPercentage = examHistory.length ? Math.round(totalPercentage / examHistory.length) : 0
+  const gradedExams = examHistory.filter(h => h.status !== 'pending_review' && h.percentage != null)
+  const totalPercentage = gradedExams.reduce((acc, h) => acc + h.percentage, 0)
+  const avgExamPercentage = gradedExams.length ? Math.round(totalPercentage / gradedExams.length) : 0
   const bestExam = examHistory.reduce((best, cur) => {
+    if (cur.percentage == null) return best
     if (!best || (cur.percentage || 0) > (best.percentage || 0)) return cur
     return best
   }, null)
@@ -357,13 +359,13 @@ export default function Profile() {
                 {last5Exams.map((h, i) => (
                   <div key={i} className="flex flex-col items-center flex-1 group relative mx-2">
                     <span className="absolute -top-7 bg-[var(--accent)] text-white text-on-accent text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 font-bold border border-[var(--border)]">
-                      {h.percentage}% ({h.score}/{h.total})
+                      {h.percentage == null ? 'Awaiting review' : `${h.percentage}% (${h.score}/${h.total})`}
                     </span>
                     <div className="w-7 bg-[var(--accent)] hover:bg-indigo-500 rounded-t transition-all duration-700 ease-out"
-                         style={{ height: `${h.percentage}%` }}>
+                         style={{ height: `${h.percentage ?? 0}%` }}>
                     </div>
                     <span className="text-[10px] text-[var(--muted)] mt-2 truncate w-20 text-center font-medium" title={h.title}>
-                      {h.title}
+                      {h.status === 'pending_review' ? `${h.title} · pending` : h.title}
                     </span>
                   </div>
                 ))}

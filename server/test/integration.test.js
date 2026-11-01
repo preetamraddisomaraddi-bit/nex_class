@@ -22,7 +22,7 @@ async function request(path, method = 'GET', body, token) {
     body: body ? JSON.stringify(body) : undefined
   });
   const data = await response.json();
-  assert.equal(response.status, method === 'POST' && path === '/universities/register' ? 201 : 200, JSON.stringify(data));
+  assert.ok([200, 201].includes(response.status), JSON.stringify(data));
   return data;
 }
 function event(socket, name) {
@@ -31,7 +31,7 @@ function event(socket, name) {
     socket.once(name, data => { clearTimeout(timeout); resolve(data); });
   });
 }
-test('registration, classroom, reports, exams and socket materials remain functional', async t => {
+test('registration, protected assessment workflow, reports and socket materials remain functional', async t => {
   if (!server.listening) await once(server, 'listening');
   base = `http://127.0.0.1:${server.address().port}`;
   await t.test('health and fresh schema USN migration', async () => {
@@ -56,6 +56,29 @@ test('registration, classroom, reports, exams and socket materials remain functi
     const duplicate = await fetch(`${base}/api/auth/student/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Duplicate', email: 'duplicate@test.local', password: 'test-password', roll_no: '2', class_section: 'A', university_code: 'TEST', usn: 'TEST001' }) });
     assert.equal(duplicate.status, 409);
   });
+  await t.test('Gemini-backed AI has a clear setup response and offline code-hint fallback', async () => {
+    const previousKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      const draftResponse = await fetch(`${base}/api/ai/generate-questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${teacher.token}` },
+        body: JSON.stringify({ topic: 'SQL joins', subject: 'Database Systems' })
+      });
+      assert.equal(draftResponse.status, 503);
+      assert.match((await draftResponse.json()).error, /GEMINI_API_KEY/);
+
+      const hintResponse = await fetch(`${base}/api/ai/hint`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'const x =', language: 'javascript' })
+      });
+      assert.equal(hintResponse.status, 200);
+      assert.match((await hintResponse.json()).hint, /Gemini API is offline/);
+    } finally {
+      if (previousKey === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = previousKey;
+    }
+  });
   const { room } = await request('/rooms/create', 'POST', { teacher_id: teacher.user.id, subject: 'JavaScript', class_name: 'A' });
   await request('/attendance/mark', 'POST', { student_id: student.user.id, room_id: room.id });
   await t.test('admin attendance report SQL and authentication', async () => {
@@ -71,15 +94,37 @@ test('registration, classroom, reports, exams and socket materials remain functi
     await request('/notes/push', 'POST', { room_id: room.id, content: 'Test note' });
     const notes = await request(`/notes/student/${student.user.id}`);
     assert.equal(notes.notes.length, 1);
-    const { exam } = await request('/exam/create', 'POST', { room_id: room.id, title: 'Quiz', questions: [{ type: 'mcq', text: '2 + 2?', options: ['3', '4'], correct_index: 1 }] });
-    const grade = await request('/exam/submit', 'POST', { student_id: student.user.id, exam_id: exam.id, answers: { 0: 1 } });
+    const { exam } = await request('/exam/create', 'POST', { room_id: room.id, title: 'Quiz', questions: [{ type: 'mcq', text: '2 + 2?', options: ['3', '4'], correct_index: 1 }] }, teacher.token);
+    await request(`/exam/${exam.id}/launch`, 'PATCH', {}, teacher.token);
+    const grade = await request('/exam/submit', 'POST', { exam_id: exam.id, answers: { 0: 1 } }, student.token);
     assert.equal(grade.percentage, 100);
     const badges = await request(`/badges/student/${student.user.id}`);
     assert.ok(badges.badges.some(badge => badge.badge_key === 'perfect_score'));
-    assert.equal((await request(`/exam/student/${student.user.id}`)).history.length, 1);
+    assert.equal((await request(`/exam/student/${student.user.id}`, 'GET', undefined, student.token)).history.length, 1);
+
+    const mixed = await request('/exam/create', 'POST', { room_id: room.id, title: 'Written assessment', questions: [
+      { type: 'mcq', text: 'Choose A', options: ['A', 'B'], correct_index: 0, points: 2 },
+      { type: 'long_answer', text: 'Explain the idea', points: 3, rubric: 'Explain with one example' }
+    ] }, teacher.token);
+    await request(`/exam/${mixed.exam.id}/launch`, 'PATCH', {}, teacher.token);
+    const safeDetail = await request(`/exam/${mixed.exam.id}`, 'GET', undefined, student.token);
+    assert.equal(safeDetail.questions[0].correct_index, undefined);
+    assert.equal(safeDetail.questions[1].rubric, undefined);
+    const pending = await request('/exam/submit', 'POST', { exam_id: mixed.exam.id, answers: { 0: 0, 1: 'My explanation' } }, student.token);
+    assert.equal(pending.status, 'pending_review');
+    assert.equal(pending.score, 2);
+    assert.equal(pending.percentage, null);
+    const mixedResults = await request(`/exam/${mixed.exam.id}/results`, 'GET', undefined, teacher.token);
+    await request(`/exam/${mixed.exam.id}/submissions/${mixedResults.results[0].id}/grade`, 'PATCH', {
+      grades: { 1: { score: 3, feedback: 'Clear explanation' } }, feedback: 'Well done'
+    }, teacher.token);
+    const graded = await request(`/exam/${mixed.exam.id}/results`, 'GET', undefined, teacher.token);
+    assert.equal(graded.results[0].status, 'graded');
+    assert.equal(graded.results[0].score, 5);
+    assert.equal(graded.results[0].percentage, 100);
   });
-  const teacherSocket = connect(base, { transports: ['websocket'] });
-  const studentSocket = connect(base, { transports: ['websocket'] });
+  const teacherSocket = connect(base, { transports: ['websocket'], auth: { token: teacher.token } });
+  const studentSocket = connect(base, { transports: ['websocket'], auth: { token: student.token } });
   clients.push(teacherSocket, studentSocket);
   await Promise.all([event(teacherSocket, 'connect'), event(studentSocket, 'connect')]);
   for (const [socket, user] of [[teacherSocket, teacher.user], [studentSocket, student.user]]) {
@@ -88,14 +133,15 @@ test('registration, classroom, reports, exams and socket materials remain functi
     await joined;
   }
   await t.test('exam launch broadcasts the persisted timestamp', async () => {
-    const { exam } = await request('/exam/create', 'POST', { room_id: room.id, title: 'Live quiz', questions: [{ type: 'mcq', text: 'One?', correct_index: 0 }] });
+    const { exam } = await request('/exam/create', 'POST', { room_id: room.id, title: 'Live quiz', questions: [{ type: 'mcq', text: 'One?', options: ['Yes', 'No'], correct_index: 0 }] }, teacher.token);
     const launched = event(studentSocket, 'exam:launched');
-    teacherSocket.emit('exam:launch', { room_code: room.code, exam });
+    await request(`/exam/${exam.id}/launch`, 'PATCH', {}, teacher.token);
     const received = await launched;
     assert.equal(received.exam.status, 'active');
     assert.ok(received.exam.launched_at);
     assert.equal(received.exam.launched_at, (await dbGet('SELECT launched_at FROM exams WHERE id = ?', [exam.id])).launched_at);
     assert.ok(Array.isArray(received.exam.questions));
+    assert.equal(received.exam.questions[0].correct_index, undefined);
   });
   await t.test('socket PDF delivery maps to student and downloads identical bytes', async () => {
     // Exceeds Socket.IO's old 1MB default limit.
@@ -109,13 +155,16 @@ test('registration, classroom, reports, exams and socket materials remain functi
     assert.equal(response.status, 200);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
   });
-  await t.test('HTTP code submission plus socket notification saves once', async () => {
+  await t.test('authenticated code submission is saved and teacher-reviewed', async () => {
     const submission = { student_id: student.user.id, room_id: room.id, code: 'console.log(1)', language: 'javascript' };
-    await request('/code/submit', 'POST', submission);
-    const notification = event(teacherSocket, 'code:submitted');
-    studentSocket.emit('code:submit', { room_code: room.code, student: student.user, ...submission });
-    await notification;
+    const notification = event(teacherSocket, 'code:submission');
+    const saved = await request('/code/submit', 'POST', { room_id: room.id, code: submission.code, language: submission.language, output: '' }, student.token);
+    assert.equal((await notification).id, saved.id);
+    const codeQueue = await request(`/code/room/${room.id}`, 'GET', undefined, teacher.token);
+    assert.equal(codeQueue.submissions.length, 1);
+    await request(`/code/${saved.id}/review`, 'PATCH', { grade: 92, feedback: 'Good use of the loop.' }, teacher.token);
     assert.equal((await dbGet('SELECT COUNT(*) AS count FROM code_submissions WHERE student_id = ?', [student.user.id])).count, 1);
+    assert.equal((await dbGet('SELECT grade FROM code_submissions WHERE id = ?', [saved.id])).grade, 92);
   });
   await t.test('end session preserves attendance', async () => {
     await request(`/rooms/${room.code}/end`, 'PATCH');

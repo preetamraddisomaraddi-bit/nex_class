@@ -34,6 +34,7 @@ const io = new Server(server, {
   maxHttpBufferSize: 10 * 1024 * 1024,
   cors: { origin: '*', methods: ['GET', 'POST', 'PATCH'] }
 });
+app.set('io', io);
 
 // ── Middleware ───────────────────────────────────────────
 app.use(cors());

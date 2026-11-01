@@ -1,65 +1,96 @@
 const express = require('express');
 const router = express.Router();
 const https = require('https');
+const { verifyTeacher } = require('../middleware/auth');
 
-router.post('/hint', (req, res) => {
+function generateGeminiText(prompt, { json = false, maxOutputTokens = 1500 } = {}) {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      const error = new Error('Gemini is not configured. Set GEMINI_API_KEY in the server .env file.');
+      error.status = 503;
+      return reject(error);
+    }
+    const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+    const payload = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens,
+        ...(json ? { responseMimeType: 'application/json' } : {})
+      }
+    });
+    const request = https.request({
+      hostname: 'generativelanguage.googleapis.com',
+      port: 443,
+      path: `/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': apiKey,
+        'content-length': Buffer.byteLength(payload)
+      }
+    }, response => {
+      let body = '';
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => {
+        let parsed;
+        try { parsed = JSON.parse(body); }
+        catch { return reject(new Error('Gemini returned an unreadable response.')); }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          const error = new Error(parsed.error?.message || 'Gemini could not generate a response.');
+          error.status = response.statusCode === 429 ? 429 : 502;
+          return reject(error);
+        }
+        const text = parsed.candidates?.[0]?.content?.parts
+          ?.map(part => part.text || '').join('').trim();
+        if (!text) return reject(new Error('Gemini returned an empty response.'));
+        resolve(text);
+      });
+    });
+    request.setTimeout(30000, () => request.destroy(new Error('Gemini request timed out.')));
+    request.on('error', reject);
+    request.write(payload);
+    request.end();
+  });
+}
+
+router.post('/generate-questions', verifyTeacher, async (req, res) => {
+  const { topic, subject, count = 3, types = ['mcq', 'short_answer', 'long_answer'], difficulty = 'medium' } = req.body;
+  if (!String(topic || '').trim()) return res.status(400).json({ error: 'Topic is required' });
+  const allowedTypes = ['mcq', 'short_answer', 'long_answer', 'code'];
+  const requestedTypes = Array.isArray(types) ? types.filter(type => allowedTypes.includes(type)) : [];
+  const questionCount = Math.max(1, Math.min(10, Number(count) || 3));
+  const prompt = `You help a teacher draft assessment questions. Create ${questionCount} original ${String(difficulty).slice(0, 30)} level questions for ${String(subject || 'the course').slice(0, 100)} on this topic: ${String(topic).slice(0, 300)}. Use only these question types: ${requestedTypes.join(', ') || 'mcq, short_answer, long_answer'}. Return a JSON array. Every item must include type, text, points. MCQ items also need four options and correct_index from 0 to 3. Written and code items need a concise rubric. Code questions also need language. Keep answer keys only in MCQ correct_index. Do not include markdown.`;
+  try {
+    const text = await generateGeminiText(prompt, { json: true, maxOutputTokens: 3000 });
+    const questions = JSON.parse(text);
+    if (!Array.isArray(questions)) throw new Error('Gemini returned an invalid question draft.');
+    res.json({ questions: questions.slice(0, questionCount) });
+  } catch (error) {
+    res.status(error.status || 502).json({ error: error.status === 429
+      ? 'Gemini free-tier quota is temporarily exhausted. Try again later.'
+      : error.message || 'Gemini could not draft questions. Please try again.' });
+  }
+});
+
+router.post('/hint', async (req, res) => {
   const { code, language } = req.body;
   if (!code) return res.status(400).json({ error: 'Code is required' });
 
-  const apiKey = process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY;
-
-  if (!apiKey) {
+  if (!process.env.GEMINI_API_KEY) {
     return res.json({ hint: getLocalHint(code, language) });
   }
 
-  // Anthropic API request
-  const data = JSON.stringify({
-    model: 'claude-3-5-sonnet-latest',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: `You are an AI teaching assistant. The student is writing ${language} code. Keep your feedback concise, focusing on hints rather than giving direct solutions. Here is the student's code:\n\n\`\`\`${language}\n${code}\n\`\`\`\n\nProvide 2-3 specific hints or guidelines on how they can improve or fix any potential bugs in this code.`
-      }
-    ]
-  });
-
-  const options = {
-    hostname: 'api.anthropic.com',
-    port: 443,
-    path: '/v1/messages',
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-length': Buffer.byteLength(data)
-    }
-  };
-
-  const reqApi = https.request(options, (resApi) => {
-    let body = '';
-    resApi.on('data', (chunk) => body += chunk);
-    resApi.on('end', () => {
-      try {
-        const parsed = JSON.parse(body);
-        if (parsed.content && parsed.content[0] && parsed.content[0].text) {
-          res.json({ hint: parsed.content[0].text });
-        } else {
-          res.json({ hint: getLocalHint(code, language) + '\n\n(AI Request returned no text. Showing local analysis instead.)' });
-        }
-      } catch (e) {
-        res.json({ hint: getLocalHint(code, language) + '\n\n(Error parsing AI response. Showing local analysis instead.)' });
-      }
-    });
-  });
-
-  reqApi.on('error', () => {
+  try {
+    const hint = await generateGeminiText(
+      `You are a code teaching assistant. Give 2-3 concise hints for a student writing ${String(language || 'code').slice(0, 30)}. Do not give the full solution.\n\n\`\`\`${language || ''}\n${String(code).slice(0, 12000)}\n\`\`\``,
+      { maxOutputTokens: 800 }
+    );
+    res.json({ hint });
+  } catch {
     res.json({ hint: getLocalHint(code, language) });
-  });
-
-  reqApi.write(data);
-  reqApi.end();
+  }
 });
 
 function getLocalHint(code, language) {
@@ -122,7 +153,7 @@ function getLocalHint(code, language) {
     });
   }
 
-  let hintText = `💡 [Offline Mode] Claude API is offline or not configured.\n\n`;
+  let hintText = `💡 [Offline Mode] Gemini API is offline or not configured.\n\n`;
   if (issues.length > 0) {
     hintText += `Local Heuristic Code Check found the following potential issues:\n` + issues.map(iss => `- ${iss}`).join('\n');
   } else {

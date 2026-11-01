@@ -57,12 +57,11 @@ export const disconnectSocket = () => {
 
 const emitRoomJoin = () => {
   if (!socket?.connected || !activeStudent || !activeRoomCode) return
-  socket.emit('student:join', {
+  // Match the server's room:join contract so the student receives live
+  // exam launches and server-confirmed submission events for this room.
+  socket.emit('room:join', {
     room_code: activeRoomCode,
-    student_id: activeStudent.id,
-    name: activeStudent.name,
-    usn: activeStudent.usn,
-    semester: activeStudent.semester
+    user: { ...activeStudent, role: 'student' }
   })
 }
 
@@ -95,6 +94,4 @@ export const stopHeartbeat = () => {
   heartbeatData = null
 }
 
-export const emitExamSubmitted = data => socket?.emit('exam:submitted', data)
-export const emitCodeSubmitted = data => socket?.emit('code:submitted', data)
 export const emitForceClose = data => socket?.emit('student:force-close', data)

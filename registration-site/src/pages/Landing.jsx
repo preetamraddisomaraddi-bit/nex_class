@@ -54,7 +54,7 @@ export default function Landing() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { icon: '🖊️', title: 'Live Whiteboard Sync', desc: 'Sync vector pen coordinate details instantly between teachers and student canvas layers.' },
-              { icon: '💻', title: 'Real-time Code Editor', desc: 'Cooperative multi-language programming workspaces integrated with Claude AI assistants.' },
+              { icon: '💻', title: 'Real-time Code Editor', desc: 'Cooperative multi-language programming workspaces with optional Gemini AI hints.' },
               { icon: '📝', title: 'Smart Exam System', desc: 'Execute live MCQ quizzes with auto-submit timers, locks, and instant results exports.' },
               { icon: '🤖', title: 'AI-Powered Hints', desc: 'Syntax evaluation fallback systems and intelligent feedback prompts for classrooms.' }
             ].map(f => (

@@ -2,11 +2,11 @@ import { useTheme } from '../context/ThemeContext.jsx'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getRoomDetail, endRoom, createExam, getExam, getExamScores } from '../api.js'
+import { getRoomDetail, endRoom, createExam, getRoomExams, getExamScores, launchExam, gradeExamSubmission, getCodeSubmissions, reviewCodeSubmission, getAPI } from '../api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   emitSessionCreated, emitSessionEnded, emitNotePushed,
-  emitCodeBroadcast, emitExamLaunched, emitBoardDraw,
+  emitCodeBroadcast, emitBoardDraw,
   emitBoardClear, getSocket
 } from '../socket.js'
 
@@ -881,234 +881,133 @@ function ExamTab({ roomCode, room, socket }) {
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
   const [duration, setDuration] = useState(30)
-  const [questions, setQuestions] = useState([{ type: 'mcq', text: '', options: ['', '', '', ''], correct_index: 0 }])
+  const [topic, setTopic] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [questions, setQuestions] = useState([{ type: 'mcq', text: '', points: 1, options: ['', '', '', ''], correct_index: 0 }])
   const [selectedResults, setSelectedResults] = useState(null)
   const [resultsList, setResultsList] = useState([])
+  const [selectedSubmission, setSelectedSubmission] = useState(null)
+  const [grades, setGrades] = useState({})
+  const [overallFeedback, setOverallFeedback] = useState('')
 
-  useEffect(() => { if (room) loadExams() }, [room])
+  useEffect(() => { if (room?.id) loadExams() }, [room?.id])
 
   async function loadExams() {
-    const examSummaries = room.exams || []
-    const details = await Promise.all(examSummaries.map(async summary => {
-      try {
-        const { data } = await getExam(summary.id)
-        return { ...data, questions: data.questions_json || [], status: summary.launched_at ? 'active' : 'draft' }
-      } catch {
-        return { ...summary, status: summary.launched_at ? 'active' : 'draft' }
-      }
-    }))
-    setExams(details)
-  }
-
-  function addQuestion() {
-    setQuestions(q => [...q, { type: 'mcq', text: '', options: ['', '', '', ''], correct_index: 0 }])
-  }
-
-  async function createExam() {
-    if (!title || questions.some(q => !q.text)) return alert('Fill all question fields')
     try {
-      await createExam({ room_id: room.id, title, duration_mins: Number(duration), questions_json: questions })
-      setCreating(false); setTitle(''); setDuration(30)
-      setQuestions([{ type: 'mcq', text: '', options: ['', '', '', ''], correct_index: 0 }])
-      loadExams()
-    } catch (err) { alert('Failed to create exam') }
+      const { data } = await getRoomExams(room.id)
+      setExams(data.exams || [])
+    } catch { alert('Failed to load exams.') }
   }
 
-  function launch(exam) {
-    emitExamLaunched({ room_code: roomCode, exam_id: exam.id, title: exam.title, duration: exam.duration_mins })
-    setExams(prev => prev.map(item => item.id === exam.id ? { ...item, status: 'active' } : item))
-    alert(`Exam "${exam.title}" launched to all students!`)
+  function addQuestion(type = 'mcq') {
+    setQuestions(list => [...list, type === 'mcq'
+      ? { type, text: '', points: 1, options: ['', '', '', ''], correct_index: 0 }
+      : { type, text: '', points: type === 'long_answer' ? 5 : 2, rubric: '', language: 'javascript' }])
+  }
+
+  function updateQuestion(index, update) {
+    setQuestions(list => list.map((q, i) => i === index ? { ...q, ...update } : q))
+  }
+
+  async function draftWithAI() {
+    if (!topic.trim()) return alert('Enter a topic for the AI question draft.')
+    setAiLoading(true)
+    try {
+      const { data } = await getAPI().post('/api/ai/generate-questions', {
+        topic, subject: room?.subject, count: 4,
+        types: ['mcq', 'short_answer', 'long_answer', 'code'], difficulty: 'medium'
+      })
+      setQuestions(data.questions || [])
+    } catch (error) {
+      alert(error.response?.data?.error || 'Could not draft questions. Check the server AI configuration.')
+    } finally { setAiLoading(false) }
+  }
+
+  async function saveExam() {
+    if (!title.trim() || questions.some(q => !q.text.trim())) return alert('Add an exam title and complete every question.')
+    try {
+      await createExam({ room_id: room.id, title, duration_mins: Number(duration), questions })
+      setCreating(false); setTitle(''); setDuration(30); setTopic('')
+      setQuestions([{ type: 'mcq', text: '', points: 1, options: ['', '', '', ''], correct_index: 0 }])
+      await loadExams()
+    } catch (error) { alert(error.response?.data?.error || 'Failed to create exam.') }
+  }
+
+  async function launch(exam) {
+    try {
+      await launchExam(exam.id)
+      setExams(list => list.map(item => item.id === exam.id ? { ...item, status: 'active' } : item))
+      alert(`Exam "${exam.title}" launched to students.`)
+    } catch (error) { alert(error.response?.data?.error || 'Failed to launch exam.') }
   }
 
   async function viewResults(exam) {
     try {
       const { data } = await getExamScores(exam.id)
-      setResultsList((Array.isArray(data) ? data : data.results || []).map(result => ({
-        ...result,
-        percentage: result.total ? Math.round(result.score / result.total * 100) : 0,
-        roll_no: result.usn || result.roll_no
-      })))
+      setResultsList(data.results || [])
       setSelectedResults(exam)
-    } catch {
-      alert('Failed to load exam results.')
-    }
+      setSelectedSubmission(null)
+    } catch (error) { alert(error.response?.data?.error || 'Failed to load exam submissions.') }
   }
 
   function exportExamResults() {
     if (!selectedResults || resultsList.length === 0) return alert('No results to export')
-
-    const headers = ['Student Name', 'Roll Number', 'Score', 'Total Questions', 'Percentage', 'Submitted Time']
-    const rows = resultsList.map(r => [
-      r.name,
-      r.roll_no,
-      r.score,
-      r.total,
-      r.percentage + '%',
-      r.submitted_at ? new Date(r.submitted_at).toLocaleString() : ''
-    ])
-
-    const csvContent = "data:text/csv;charset=utf-8,"
-      + [headers.join(','), ...rows.map(e => e.map(val => `"${val.toString().replace(/"/g, '""')}"`).join(','))].join('\n')
-
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `Results_${selectedResults.title.replace(/\s+/g, '_')}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    const headers = ['Student Name', 'Roll Number', 'Score', 'Total Points', 'Percentage', 'Status', 'Submitted Time']
+    const rows = resultsList.map(r => [r.name, r.usn || r.roll_no, r.score, r.total, r.percentage == null ? 'Pending review' : r.percentage + '%', r.status, r.submitted_at ? new Date(r.submitted_at).toLocaleString() : ''])
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))].join('\n')
+    const link = document.createElement('a'); link.href = encodeURI(csvContent); link.download = `Results_${selectedResults.title.replace(/\s+/g, '_')}.csv`; link.click()
   }
+
+  async function saveGrade() {
+    if (!selectedResults || !selectedSubmission) return
+    try {
+      const { data } = await gradeExamSubmission(selectedResults.id, selectedSubmission.id, { grades, feedback: overallFeedback })
+      setResultsList(list => list.map(item => item.id === selectedSubmission.id ? { ...item, ...data } : item))
+      setSelectedSubmission(null); setGrades({}); setOverallFeedback('')
+    } catch (error) { alert(error.response?.data?.error || 'Failed to save grading.') }
+  }
+
+  const getQuestions = () => selectedResults?.questions || []
+  const isManual = q => ['short_answer', 'long_answer', 'code'].includes(q.type)
 
   return (
     <div className="h-full overflow-y-auto p-6">
-
       {selectedResults ? (
-        // Results Sub-view
         <div className="bg-[var(--card)] rounded-2xl p-6 border border-[var(--border)]">
           <div className="flex items-center justify-between mb-6">
-            <div>
-              <button onClick={() => setSelectedResults(null)} className="text-sm text-[var(--accent)] hover:text-[var(--accent)] mb-2 block">← Back to Exams</button>
-              <h3 className="font-bold text-white text-xl">{selectedResults.title} — Results</h3>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={exportExamResults}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium">
-                📥 Export CSV
-              </button>
-              <button onClick={() => setSelectedResults(null)} className="bg-[var(--card2)] hover:bg-[var(--card2)] text-white text-sm px-4 py-2 rounded-lg transition-colors">
-                Close
-              </button>
-            </div>
+            <div><button onClick={() => { setSelectedResults(null); setSelectedSubmission(null) }} className="text-sm text-[var(--accent)] mb-2 block">← Back to Exams</button><h3 className="font-bold text-[var(--text)] text-xl">{selectedResults.title} — Submissions</h3></div>
+            <div className="flex gap-2"><button onClick={exportExamResults} className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">📥 Export CSV</button><button onClick={() => setSelectedResults(null)} className="bg-[var(--card2)] text-[var(--text)] text-sm px-4 py-2 rounded-lg">Close</button></div>
           </div>
-
-          {resultsList.length === 0 ? (
-            <p className="text-[var(--muted)] text-sm text-center py-8">No submissions yet for this exam.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
-                    <th className="py-3 px-4">Student</th>
-                    <th className="py-3 px-4">Roll Number</th>
-                    <th className="py-3 px-4">Score</th>
-                    <th className="py-3 px-4">Percentage</th>
-                    <th className="py-3 px-4">Submitted At</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--border)] text-sm text-[var(--text2)]">
-                  {resultsList.map(r => (
-                    <tr key={r.id} className="hover:bg-[var(--card2)]">
-                      <td className="py-3.5 px-4 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white avatar-ink" style={{ background: r.avatar_color }}>
-                          {r.name?.slice(0,1)}
-                        </div>
-                        {r.name}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono">{r.roll_no}</td>
-                      <td className="py-3.5 px-4 font-semibold text-white">{r.score} / {r.total}</td>
-                      <td className="py-3.5 px-4 font-semibold text-[var(--accent)]">{r.percentage}%</td>
-                      <td className="py-3.5 px-4 text-xs text-[var(--muted)]">{new Date(r.submitted_at).toLocaleTimeString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {selectedSubmission ? (
+            <div className="space-y-4">
+              <button onClick={() => setSelectedSubmission(null)} className="text-sm text-[var(--accent)]">← All submissions</button>
+              <h4 className="font-semibold text-[var(--text)]">{selectedSubmission.name} · {selectedSubmission.usn || selectedSubmission.roll_no}</h4>
+              {getQuestions().map((q, index) => isManual(q) && (
+                <div key={index} className="rounded-xl p-4 border border-[var(--border)] bg-[var(--surface)]">
+                  <p className="text-sm font-semibold text-[var(--text)]">Q{index + 1}. {q.text} <span className="text-[var(--muted)]">({q.points} pts)</span></p>
+                  {q.type === 'code' ? <pre className="mt-3 p-3 bg-[#0d1117] text-[#e2e8f0] rounded-lg whitespace-pre-wrap overflow-x-auto">{selectedSubmission.answers?.[index] || 'No code submitted'}</pre> : <p className="mt-3 whitespace-pre-wrap text-sm text-[var(--text2)]">{selectedSubmission.answers?.[index] || 'No answer submitted'}</p>}
+                  <p className="mt-3 text-xs text-[var(--muted)]">Rubric: {q.rubric || 'Use your judgment against the question requirements.'}</p>
+                  <div className="grid grid-cols-[110px_1fr] gap-3 mt-3"><label className="text-xs text-[var(--muted)]">Points earned</label><input type="number" min="0" max={q.points} step="0.5" value={grades[index]?.score ?? selectedSubmission.question_scores?.[index]?.score ?? ''} onChange={e => setGrades(prev => ({ ...prev, [index]: { ...prev[index], score: e.target.value } }))} className="bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] rounded px-3 py-2" /><label className="text-xs text-[var(--muted)]">Feedback</label><textarea value={grades[index]?.feedback ?? selectedSubmission.question_scores?.[index]?.feedback ?? ''} onChange={e => setGrades(prev => ({ ...prev, [index]: { ...prev[index], feedback: e.target.value, score: prev[index]?.score ?? selectedSubmission.question_scores?.[index]?.score } }))} className="bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] rounded px-3 py-2" rows="2" /></div>
+                </div>
+              ))}
+              <label className="block text-sm text-[var(--text2)]">Overall feedback<textarea value={overallFeedback} onChange={e => setOverallFeedback(e.target.value)} className="block w-full mt-1 bg-[var(--surface)] border border-[var(--border2)] text-[var(--text)] rounded-lg p-3" rows="3" /></label>
+              <button onClick={saveGrade} className="bg-indigo-600 text-white px-5 py-2 rounded-lg">Save grading</button>
             </div>
+          ) : resultsList.length === 0 ? <p className="text-[var(--muted)] text-sm text-center py-8">No submissions yet.</p> : (
+            <div className="overflow-x-auto"><table className="w-full text-left border-collapse"><thead><tr className="border-b border-[var(--border)] text-xs font-semibold text-[var(--muted)] uppercase"><th className="py-3 px-4">Student</th><th className="py-3 px-4">Score</th><th className="py-3 px-4">Status</th><th className="py-3 px-4">Submitted</th><th className="py-3 px-4">Review</th></tr></thead><tbody className="divide-y divide-[var(--border)] text-sm text-[var(--text2)]">{resultsList.map(r => <tr key={r.id}><td className="py-3 px-4">{r.name} · {r.usn || r.roll_no}</td><td className="py-3 px-4">{r.score} / {r.total}{r.percentage == null ? '' : ` (${r.percentage}%)`}</td><td className="py-3 px-4 capitalize">{r.status === 'pending_review' ? 'Pending review' : r.status}</td><td className="py-3 px-4">{new Date(r.submitted_at).toLocaleString()}</td><td className="py-3 px-4">{getQuestions().some(isManual) ? <button onClick={() => { setSelectedSubmission(r); setGrades(r.question_scores || {}); setOverallFeedback(r.feedback || '') }} className="text-[var(--accent)]">Review answers</button> : 'Auto-graded'}</td></tr>)}</tbody></table></div>
           )}
         </div>
-      ) : (
-        // Standard Exams List View
-        <>
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-semibold text-white text-lg">Exams</h3>
-            <button onClick={() => setCreating(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-              + Create Exam
-            </button>
-          </div>
-
-          {creating && (
-            <div className="bg-[var(--card)] rounded-2xl p-6 mb-6 border border-[var(--border)]">
-              <h4 className="font-semibold text-white mb-4">New Exam</h4>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs text-[var(--muted)] mb-1 block">Exam Title</label>
-                  <input value={title} onChange={e => setTitle(e.target.value)}
-                    className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]"
-                    placeholder="Mid-term Quiz" />
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--muted)] mb-1 block">Duration (mins)</label>
-                  <input type="number" value={duration} onChange={e => setDuration(+e.target.value)}
-                    className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]" />
-                </div>
-              </div>
-              <div className="space-y-4 mb-4">
-                {questions.map((q, qi) => (
-                  <div key={qi} className="bg-[var(--bg)] rounded-xl p-4 border border-[var(--border)]">
-                    <p className="text-xs text-[var(--muted)] mb-2">Question {qi + 1}</p>
-                    <input value={q.text} onChange={e => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,text:e.target.value} : x))}
-                      className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[var(--accent)] mb-3"
-                      placeholder="Question text..." />
-                    <div className="grid grid-cols-2 gap-2">
-                      {q.options.map((opt, oi) => (
-                        <div key={oi} className="flex items-center gap-2">
-                          <input type="radio" name={`q${qi}`} checked={q.correct_index === oi}
-                            onChange={() => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,correct_index:oi} : x))}
-                            className="accent-indigo-500" />
-                          <input value={opt} onChange={e => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,options:x.options.map((o,j) => j===oi ? e.target.value : o)} : x))}
-                            className="flex-1 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]"
-                            placeholder={`Option ${oi+1}`} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex gap-3">
-                <button onClick={addQuestion} className="bg-[var(--card2)] hover:bg-[var(--card2)] text-white text-sm px-4 py-2 rounded-lg transition-colors">+ Add Question</button>
-                <button onClick={createExam} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">Save Exam</button>
-                <button onClick={() => setCreating(false)} className="text-[var(--muted)] hover:text-[var(--text)] text-sm px-4 py-2 transition-colors">Cancel</button>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            {exams.map(exam => (
-              <div key={exam.id} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)] flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-white">{exam.title}</p>
-                  <p className="text-[var(--muted)] text-sm">{exam.questions?.length || 0} questions · {exam.duration_mins} mins</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium uppercase
-                    ${exam.status === 'active' ? 'bg-[var(--green-soft)] text-[var(--green)]'
-                      : exam.status === 'ended' ? 'bg-[var(--red-soft)] text-[var(--red)]'
-                      : 'bg-[var(--card2)] text-[var(--muted)]'}`}>
-                    {exam.status}
-                  </span>
-
-                  {exam.status === 'draft' && (
-                    <button onClick={() => launch(exam)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-                      🚀 Launch
-                    </button>
-                  )}
-
-                  {exam.status !== 'draft' && (
-                    <button onClick={() => viewResults(exam)} className="bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--border)] text-sm px-4 py-1.5 rounded-lg transition-colors">
-                      📊 Results
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {exams.length === 0 && !creating && (
-              <div className="text-center text-[var(--muted)] mt-12">
-                <p className="text-4xl mb-2">📝</p>
-                <p>No exams created yet</p>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+      ) : <>
+        <div className="flex items-center justify-between mb-6"><h3 className="font-semibold text-[var(--text)] text-lg">Exams</h3><button onClick={() => setCreating(true)} className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">+ Create Exam</button></div>
+        {creating && <div className="bg-[var(--card)] rounded-2xl p-6 mb-6 border border-[var(--border)]">
+          <h4 className="font-semibold text-[var(--text)] mb-4">New Exam</h4>
+          <div className="grid grid-cols-2 gap-4 mb-4"><label className="text-xs text-[var(--muted)]">Exam title<input value={title} onChange={e => setTitle(e.target.value)} className="w-full mt-1 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" placeholder="Mid-term assessment" /></label><label className="text-xs text-[var(--muted)]">Duration (minutes)<input type="number" min="1" max="300" value={duration} onChange={e => setDuration(+e.target.value)} className="w-full mt-1 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" /></label></div>
+          <div className="rounded-lg bg-[var(--card2)] p-3 mb-4"><label className="text-xs text-[var(--muted)]">AI question draft topic<input value={topic} onChange={e => setTopic(e.target.value)} className="w-full mt-1 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" placeholder="e.g. SQL joins and normalization" /></label><button disabled={aiLoading} onClick={draftWithAI} className="mt-2 text-sm text-[var(--accent)] disabled:opacity-50">{aiLoading ? 'Drafting…' : '✨ Draft questions with AI'}</button><p className="text-xs text-[var(--muted)] mt-1">Review and edit every draft before saving. Configure GEMINI_API_KEY on the server. Free-tier prompts may be used to improve Google products; omit student data.</p></div>
+          <div className="space-y-4 mb-4">{questions.map((q, qi) => <div key={qi} className="bg-[var(--bg)] rounded-xl p-4 border border-[var(--border)]"><div className="flex justify-between gap-3 mb-2"><p className="text-xs text-[var(--muted)]">Question {qi + 1}</p><button onClick={() => setQuestions(list => list.filter((_, i) => i !== qi))} className="text-xs text-[var(--red)]">Remove</button></div><div className="grid grid-cols-[1fr_100px] gap-2"><select value={q.type} onChange={e => { const type=e.target.value; updateQuestion(qi, type === 'mcq' ? { type, options: ['', '', '', ''], correct_index: 0 } : { type, rubric: q.rubric || '', language: q.language || 'javascript' }) }} className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]"><option value="mcq">Multiple choice</option><option value="short_answer">Short answer</option><option value="long_answer">Long answer</option><option value="code">Code response</option></select><input type="number" min="0.5" step="0.5" value={q.points} onChange={e => updateQuestion(qi, { points: Number(e.target.value) })} className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" aria-label="Question points" /></div><textarea value={q.text} onChange={e => updateQuestion(qi, { text: e.target.value })} className="w-full mt-2 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" rows="2" placeholder="Question text" />{q.type === 'mcq' ? <div className="grid grid-cols-2 gap-2 mt-2">{(q.options || []).map((option, oi) => <div key={oi} className="flex items-center gap-2"><input type="radio" name={`correct-${qi}`} checked={q.correct_index === oi} onChange={() => updateQuestion(qi, { correct_index: oi })} /><input value={option} onChange={e => updateQuestion(qi, { options: q.options.map((item, i) => i === oi ? e.target.value : item) })} className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded px-2 py-1.5 text-sm text-[var(--text)]" placeholder={`Option ${oi + 1}`} /></div>)}</div> : <><textarea value={q.rubric || ''} onChange={e => updateQuestion(qi, { rubric: e.target.value })} className="w-full mt-2 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-2 text-sm text-[var(--text)]" rows="2" placeholder="Teacher rubric / expected points" />{q.type === 'code' && <input value={q.language || 'javascript'} onChange={e => updateQuestion(qi, { language: e.target.value })} className="mt-2 bg-[var(--surface)] border border-[var(--border2)] rounded px-3 py-2 text-sm text-[var(--text)]" placeholder="Programming language" />}</>}</div>)}</div>
+          <div className="flex flex-wrap gap-2"><button onClick={() => addQuestion('mcq')} className="bg-[var(--card2)] text-[var(--text)] text-sm px-3 py-2 rounded-lg">+ MCQ</button><button onClick={() => addQuestion('short_answer')} className="bg-[var(--card2)] text-[var(--text)] text-sm px-3 py-2 rounded-lg">+ Short answer</button><button onClick={() => addQuestion('long_answer')} className="bg-[var(--card2)] text-[var(--text)] text-sm px-3 py-2 rounded-lg">+ Long answer</button><button onClick={() => addQuestion('code')} className="bg-[var(--card2)] text-[var(--text)] text-sm px-3 py-2 rounded-lg">+ Code</button><button onClick={saveExam} className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg">Save Exam</button><button onClick={() => setCreating(false)} className="text-[var(--muted)] text-sm px-4 py-2">Cancel</button></div>
+        </div>}
+        <div className="space-y-3">{exams.map(exam => <div key={exam.id} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)] flex items-center justify-between"><div><p className="font-semibold text-[var(--text)]">{exam.title}</p><p className="text-[var(--muted)] text-sm">{exam.questions?.length || 0} questions · {exam.duration_mins} mins</p></div><div className="flex items-center gap-3"><span className="px-3 py-1 rounded-full text-xs uppercase">{exam.status}</span>{exam.status === 'draft' && <button onClick={() => launch(exam)} className="bg-indigo-600 text-white text-sm px-4 py-1.5 rounded-lg">🚀 Launch</button>}<button onClick={() => viewResults(exam)} className="text-[var(--accent)] text-sm px-3 py-1.5">📊 Submissions</button></div></div>)}{!exams.length && !creating && <div className="text-center text-[var(--muted)] mt-12"><p className="text-4xl mb-2">📝</p><p>No exams created yet</p></div>}</div>
+      </>}
     </div>
   )
 }
@@ -1117,10 +1016,15 @@ function ExamTab({ roomCode, room, socket }) {
 function SubmissionsTab({ roomCode, room }) {
   const [submissions, setSubmissions] = useState([])
   const [selected, setSelected] = useState(null)
+  const [grade, setGrade] = useState('')
+  const [feedback, setFeedback] = useState('')
+  const [savingReview, setSavingReview] = useState(false)
   const socket = getSocket()
 
   useEffect(() => {
     if (!room) return
+    getCodeSubmissions(room.id).then(({ data }) => setSubmissions(data.submissions || []))
+      .catch(() => {})
     const addSubmission = submission => {
       if (submission.room_code !== roomCode) return
       const item = {
@@ -1138,6 +1042,18 @@ function SubmissionsTab({ roomCode, room }) {
       socket?.off('exam:submission', addSubmission)
     }
   }, [room, roomCode, socket])
+
+  async function saveCodeReview() {
+    if (!selected) return
+    setSavingReview(true)
+    try {
+      const { data } = await reviewCodeSubmission(selected.id, { grade, feedback })
+      const updated = { ...selected, ...data }
+      setSelected(updated)
+      setSubmissions(prev => prev.map(item => item.id === updated.id ? updated : item))
+    } catch (error) { alert(error.response?.data?.error || 'Failed to save code review.') }
+    finally { setSavingReview(false) }
+  }
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -1157,7 +1073,7 @@ function SubmissionsTab({ roomCode, room }) {
                   </div>
                   <p className="font-medium text-white text-sm">{s.name}</p>
                 </div>
-                <p className="text-[var(--muted)] text-xs">{s.language || 'Exam'} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
+                <p className="text-[var(--muted)] text-xs">{s.language || 'Code'} · {s.status || 'submitted'} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
               </button>
             ))}
           </div>
@@ -1182,6 +1098,13 @@ function SubmissionsTab({ roomCode, room }) {
                 <pre className="bg-[#0d1117] text-[#e2e8f0] font-mono text-sm p-4 rounded-xl border border-[var(--border)]">{selected.output}</pre>
               </div>
             )}
+            <div className="mt-5 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 space-y-3">
+              <h4 className="font-semibold text-[var(--text)]">Teacher review</h4>
+              {selected.grade != null && <p className="text-sm text-[var(--text2)]">Current grade: {selected.grade}/100 · {selected.status}</p>}
+              <label className="block text-xs text-[var(--muted)]">Grade (0–100)<input type="number" min="0" max="100" value={grade} onChange={e => setGrade(e.target.value)} className="block mt-1 w-32 rounded border border-[var(--border2)] bg-[var(--surface)] p-2 text-sm text-[var(--text)]" /></label>
+              <label className="block text-xs text-[var(--muted)]">Feedback<textarea value={feedback} onChange={e => setFeedback(e.target.value)} rows="3" className="block mt-1 w-full rounded border border-[var(--border2)] bg-[var(--surface)] p-2 text-sm text-[var(--text)]" /></label>
+              <button disabled={savingReview} onClick={saveCodeReview} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{savingReview ? 'Saving…' : 'Save review'}</button>
+            </div>
           </>
         ) : (
           <div className="h-full flex items-center justify-center text-[var(--muted)]">

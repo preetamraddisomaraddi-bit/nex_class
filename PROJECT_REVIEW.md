@@ -15,7 +15,7 @@ The existing React/Vite/Tailwind, Electron, Express, Socket.IO and SQLite archit
 | Authentication | JWT and bcrypt implemented; configured secrets now honored and existing role middleware checks roles | Most classroom API routes do not apply authentication; socket events trust client identities; pending teachers receive signup tokens |
 | Real-time classroom | Board, notes, code broadcast, PDF, exams, WebRTC signaling, slides, status, chat/hand socket handlers | Chat/hand handlers lack matching UI; reconnect membership/state recovery incomplete; board/slides state replay incomplete |
 | Exams | Creation, launch/end, MCQ scoring and history implemented; API grading and persisted launch timestamp tested | Written/coding answers are stored but not graded; answers include correct indexes in student payloads; submissions can be replaced and lack deadline/access enforcement |
-| Code and AI | Code submission/history tested; Judge0 execution and Claude/local hint implementations present | Compiler and AI external services not exercised; PDF.js CDN and Judge0 mean those features are not fully offline; AI model/configuration and timeout need review |
+| Code and AI | Code submission/history tested; Judge0 execution and Gemini/local hint implementations present | Compiler and AI external services not exercised; PDF.js CDN and Judge0 mean those features are not fully offline; AI model/configuration and timeout need review |
 | Attendance and badges | Attendance/history tested; five badge rules implemented and perfect-score badge tested | Attendance denominator only includes recorded joins, so missing sessions are not counted; “Consistent” and “Top Performer” badges advertised in historical log are absent |
 | Database | 15 SQLite tables, async helpers, WAL, foreign keys and tenant migrations | Migration errors are logged rather than blocking startup; duplicate existing USNs can prevent unique-index creation; broader validation/transactions need review |
 
@@ -42,7 +42,7 @@ The existing React/Vite/Tailwind, Electron, Express, Socket.IO and SQLite archit
 - Four production frontend builds pass. Nonfatal dependency deprecation/module warnings and large student/admin bundles remain.
 - Backend regression suite covers schema/USN uniqueness, university/student/teacher registration, USN login, configured secret signing, admin authentication/role rejection, attendance-report SQL, notes/history, MCQ grades, badges, PDF delivery/download above 1 MiB, single code persistence, exam launch timestamp, session ending and preservation of pre-existing data across repeated migration startups.
 - Electron version execution passes; full window startup is blocked by the missing X/display server. No desktop UI or Windows installer acceptance claims are made.
-- No external compiler, Claude API, screen/video sharing or LibreOffice conversion test was performed. Existing user databases were not supplied and were not modified.
+- No external compiler, Gemini API, screen/video sharing or LibreOffice conversion test was performed. Existing user databases were not supplied and were not modified.
 
 ## Proposed major security change — requires owner approval
 

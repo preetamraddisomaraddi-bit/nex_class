@@ -86,7 +86,19 @@ function runMigrations(dbInstance) {
 
     "ALTER TABLE rooms ADD COLUMN university_id INTEGER REFERENCES universities(id)",
     "ALTER TABLE rooms ADD COLUMN department_id INTEGER REFERENCES departments(id)",
-    "ALTER TABLE rooms ADD COLUMN semester_id INTEGER REFERENCES semesters(id)"
+    "ALTER TABLE rooms ADD COLUMN semester_id INTEGER REFERENCES semesters(id)",
+
+    "ALTER TABLE exam_submissions ADD COLUMN status TEXT DEFAULT 'graded'",
+    "ALTER TABLE exam_submissions ADD COLUMN question_scores TEXT DEFAULT '{}'",
+    "ALTER TABLE exam_submissions ADD COLUMN feedback TEXT DEFAULT ''",
+    "ALTER TABLE exam_submissions ADD COLUMN graded_by INTEGER",
+    "ALTER TABLE exam_submissions ADD COLUMN graded_at DATETIME",
+
+    "ALTER TABLE code_submissions ADD COLUMN grade REAL",
+    "ALTER TABLE code_submissions ADD COLUMN feedback TEXT DEFAULT ''",
+    "ALTER TABLE code_submissions ADD COLUMN status TEXT DEFAULT 'submitted'",
+    "ALTER TABLE code_submissions ADD COLUMN graded_by INTEGER",
+    "ALTER TABLE code_submissions ADD COLUMN graded_at DATETIME"
   ];
 
   alterStatements.forEach(stmt => {

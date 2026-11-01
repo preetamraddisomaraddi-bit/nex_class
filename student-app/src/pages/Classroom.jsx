@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getAPI, getExam, submitScore } from '../api.js'
+import { getAPI, getExam, getMyScores, submitScore } from '../api.js'
 import { useAuth } from '../context/AuthContext.jsx'
-import { getSocket, joinRoom as joinSocketRoom, startHeartbeat, stopHeartbeat, leaveRoom, emitCodeSubmitted, emitExamSubmitted, emitForceClose } from '../socket.js'
+import { getSocket, joinRoom as joinSocketRoom, startHeartbeat, stopHeartbeat, leaveRoom, emitForceClose } from '../socket.js'
 import { jsPDF } from 'jspdf'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
@@ -66,7 +66,7 @@ export default function Classroom() {
       setLaunchedExam(data)
       setTab('Exam')
     }
-    socket.on('exam:started', handleExamStarted)
+    socket.on('exam:launched', handleExamStarted)
 
     const handleScreenStarted = ({ from }) => {
       console.log('[WebRTC] Screen sharing started by:', from)
@@ -204,7 +204,7 @@ export default function Classroom() {
       clearInterval(heartbeat)
       stopHeartbeat()
       leaveRoom(roomCode)
-      socket.off('exam:started', handleExamStarted)
+      socket.off('exam:launched', handleExamStarted)
       socket.off('screen:started', handleScreenStarted)
       socket.off('screen:stopped', handleScreenStopped)
       socket.off('screen:offer', handleScreenOfferEvent)
@@ -487,18 +487,10 @@ function CodeTab({ roomCode, socket, student, room }) {
     if (!room) return
     setSubmitting(true)
     try {
-      emitCodeSubmitted({
-        room_code: roomCode,
-        student_id: student.id,
-        name: student.name,
-        usn: student.usn,
-        code,
-        language,
-        output
-      })
+      await getAPI().post('/code/submit', { room_id: room.id, code, language, output })
       alert('Code submitted successfully to the teacher!')
-    } catch {
-      alert('Failed to submit code.')
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to submit code.')
     } finally {
       setSubmitting(false)
     }
@@ -544,6 +536,8 @@ function CodeTab({ roomCode, socket, student, room }) {
           </button>
         </div>
 
+        <p className="px-4 pt-1 text-[10px] text-[var(--muted)]">Ask AI sends the current code to Gemini. Free-tier prompts may be used to improve Google products; leave out personal or sensitive information.</p>
+
         {/* Editor Area */}
         <div className="flex-1 flex flex-col">
           <textarea value={code} onChange={e => setCode(e.target.value)}
@@ -561,7 +555,7 @@ function CodeTab({ roomCode, socket, student, room }) {
       {showAiPanel && (
         <div className="w-80 border-l border-[var(--border)] bg-[var(--card)] p-6 flex flex-col gap-4 overflow-y-auto">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-white flex items-center gap-2">🤖 Claude AI Hint</h3>
+            <h3 className="font-semibold text-white flex items-center gap-2">🤖 Gemini AI Hint</h3>
             <button onClick={() => setShowAiPanel(false)} className="text-[var(--muted)] hover:text-white">✕</button>
           </div>
           <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)] flex-1 overflow-y-auto text-sm text-[var(--text2)] whitespace-pre-wrap leading-relaxed">
@@ -697,14 +691,14 @@ function NotesTab({ room, receivedPDFs, handleViewPDF, handleDownloadPDF }) {
   )
 }
 
-// ─── MCQ EXAM CLIENT ────────────────────────────────────────
+// ─── EXAM CLIENT ────────────────────────────────────────────
 function ExamTab({ roomCode, socket, student, room, launchedExam }) {
   const [exam, setExam] = useState(null)
   const [answers, setAnswers] = useState({})
   const [timeLeft, setTimeLeft] = useState(0)
   const [submitted, setSubmitted] = useState(false)
   const [result, setResult] = useState(null)
-
+  const [submitting, setSubmitting] = useState(false)
   const timerRef = useRef(null)
   const latestRef = useRef({ exam, answers, submitted })
   const initializedExamRef = useRef(null)
@@ -716,219 +710,70 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
     const onLaunch = payload => {
       const launched = payload.exam || payload
       const id = launched.id || launched.exam_id
-      if (Array.isArray(launched.questions) || Array.isArray(launched.questions_json)) {
-        initializeExam({ ...launched, id, questions: launched.questions || launched.questions_json })
-      } else if (id) {
-        getExam(id).then(({ data }) => initializeExam({
-          ...data,
-          id: data.id || id,
-          questions: data.questions_json || data.questions || []
-        })).catch(() => {})
-      }
+      if (Array.isArray(launched.questions)) initializeExam({ ...launched, id })
+      else if (id) getExam(id).then(({ data }) => initializeExam({ ...data, id: data.id || id, questions: data.questions || [] })).catch(() => {})
     }
     if (launchedExam) onLaunch(launchedExam)
-    socket.on('exam:started', onLaunch)
-    return () => {
-      socket.off('exam:started', onLaunch)
-      clearInterval(timerRef.current)
-    }
+    socket.on('exam:launched', onLaunch)
+    return () => { socket.off('exam:launched', onLaunch); clearInterval(timerRef.current) }
   }, [room?.id, launchedExam])
 
   async function loadActiveExam() {
     if (!room) return
-    const active = (room.exams || []).filter(item => item.launched_at).sort((a, b) =>
-      new Date(b.launched_at) - new Date(a.launched_at)
-    )[0]
-    if (!active) return
     try {
-      const { data: history } = await getAPI().get(`/scores/student/${student.id}`)
-      const submission = (Array.isArray(history) ? history : []).find(item => item.exam_id === active.id)
-      if (submission) {
-        setSubmitted(true)
-        setResult({
-          score: submission.score,
-          total: submission.total,
-          percentage: submission.total ? Math.round(submission.score / submission.total * 100) : 0
-        })
-        return
-      }
-      const { data } = await getExam(active.id)
-      initializeExam({ ...data, id: data.id || active.id, questions: data.questions_json || data.questions || [] })
+      const { data: activeData } = await getAPI().get(`/exam/active/${encodeURIComponent(roomCode)}`)
+      const activeExam = activeData.exam
+      if (!activeExam) return
+      const { data: historyData } = await getMyScores(student.id)
+      const submission = (historyData.history || []).find(item => item.exam_id === activeExam.id)
+      if (submission) { setSubmitted(true); setResult(submission); return }
+      initializeExam(activeExam)
     } catch {}
   }
 
   function initializeExam(ex) {
-    // Repeated events and answer changes must not reset an active attempt.
     if (initializedExamRef.current === ex.id) return
     initializedExamRef.current = ex.id
     submittingRef.current = false
     latestRef.current = { exam: ex, answers: {}, submitted: false }
-    setExam(ex)
-    setSubmitted(false)
-    setAnswers({})
-    setResult(null)
-
-    // SQLite CURRENT_TIMESTAMP is UTC, even on Windows clients in India.
+    setExam(ex); setSubmitted(false); setAnswers({}); setResult(null)
     const timestamp = ex.launched_at
-    const normalized = timestamp && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp)
-      ? timestamp.replace(' ', 'T') + 'Z' : timestamp
+    const normalized = timestamp && !/[Zz]|[+-]\d{2}:?\d{2}$/.test(timestamp) ? timestamp.replace(' ', 'T') + 'Z' : timestamp
     const parsedStart = new Date(normalized).getTime()
     const start = Number.isFinite(parsedStart) ? parsedStart : Date.now()
-    const deadline = start + ex.duration_mins * 60 * 1000
+    const deadline = start + Number(ex.duration_mins || 30) * 60 * 1000
     const remaining = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
-    setTimeLeft(remaining())
-    clearInterval(timerRef.current)
+    setTimeLeft(remaining()); clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
-      const seconds = remaining()
-      setTimeLeft(seconds)
-      if (seconds === 0) {
-        clearInterval(timerRef.current)
-        autoSubmit()
-      }
+      const seconds = remaining(); setTimeLeft(seconds)
+      if (seconds === 0) { clearInterval(timerRef.current); submitAnswers() }
     }, 1000)
   }
 
-  function selectOption(qIdx, optIdx) {
-    if (submitted) return
-    setAnswers(prev => ({ ...prev, [qIdx]: optIdx }))
-  }
-
-  async function autoSubmit() {
-    alert('Time has expired! Submitting your exam answers.')
-    submitAnswers()
+  function setAnswer(index, value) {
+    if (submitted || submitting) return
+    setAnswers(prev => { const next = { ...prev, [index]: value }; latestRef.current.answers = next; return next })
   }
 
   async function submitAnswers() {
     const current = latestRef.current
     if (!current.exam || current.submitted || submittingRef.current) return
-    submittingRef.current = true
-    clearInterval(timerRef.current)
+    submittingRef.current = true; setSubmitting(true); clearInterval(timerRef.current)
     try {
-      const questions = current.exam.questions || []
-      const score = questions.reduce((totalScore, question, index) => {
-        const correct = question.correct_index ?? question.correctIndex ?? question.answer_index
-        return totalScore + (correct !== undefined && String(current.answers[index]) === String(correct) ? 1 : 0)
-      }, 0)
-      const total = questions.filter(question =>
-        question.correct_index !== undefined ||
-        question.correctIndex !== undefined ||
-        question.answer_index !== undefined
-      ).length || questions.length
-      await submitScore({
-        exam_id: current.exam.id,
-        score,
-        total,
-        answers_json: current.answers
-      })
-      latestRef.current.submitted = true
-      setSubmitted(true)
-      setResult({ score, total, percentage: total ? Math.round((score / total) * 100) : 0 })
-      emitExamSubmitted({
-        room_code: roomCode,
-        student_id: student.id,
-        name: student.name,
-        usn: student.usn,
-        exam_id: current.exam.id,
-        score: data.score,
-        total: data.total
-      })
-    } catch {
-      submittingRef.current = false
-      alert('Failed to submit exam.')
+      const { data } = await submitScore({ exam_id: current.exam.id, answers: current.answers })
+      latestRef.current.submitted = true; setSubmitted(true); setResult(data)
+    } catch (error) {
+      submittingRef.current = false; setSubmitting(false)
+      alert(error.response?.data?.error || 'Failed to submit exam.')
     }
   }
 
-  function formatTime(sec) {
-    const m = Math.floor(sec / 60)
-    const s = sec % 60
-    return `${m}:${s < 10 ? '0' : ''}${s}`
-  }
+  function formatTime(sec) { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}` }
 
   if (submitted && result) {
-    return (
-      <div className="h-full flex items-center justify-center p-6">
-        <div className="bg-[var(--card)] rounded-2xl p-8 border border-[var(--border)] max-w-md w-full text-center shadow-2xl">
-          <p className="text-5xl mb-3">🎉</p>
-          <h3 className="text-xl font-bold text-white mb-2">Exam Submitted!</h3>
-          <p className="text-[var(--muted)] text-sm mb-6">Your answers have been graded by the system.</p>
-
-          <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--border)] mb-6 grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-[var(--muted)] font-bold uppercase tracking-wider mb-1">Score</p>
-              <p className="text-2xl font-bold text-[var(--accent)]">{result.score} / {result.total}</p>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--muted)] font-bold uppercase tracking-wider mb-1">Percentage</p>
-              <p className="text-2xl font-bold text-[var(--accent)]">{result.percentage}%</p>
-            </div>
-          </div>
-
-          <button onClick={() => setExam(null)}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors">
-            Close Result View
-          </button>
-        </div>
-      </div>
-    )
+    const pending = result.status === 'pending_review'
+    return <div className="h-full flex items-center justify-center p-6"><div className="bg-[var(--card)] rounded-2xl p-8 border border-[var(--border)] max-w-md w-full text-center shadow-2xl"><p className="text-5xl mb-3">{pending ? '📝' : '✅'}</p><h3 className="text-xl font-bold text-[var(--text)] mb-2">{pending ? 'Answers submitted' : 'Exam graded'}</h3><p className="text-[var(--muted)] text-sm mb-6">{pending ? 'Written and code responses are waiting for your teacher to review.' : 'Your objective answers were graded by the server.'}</p>{!pending && <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--border)] mb-6 grid grid-cols-2 gap-4"><div><p className="text-xs text-[var(--muted)] font-bold uppercase mb-1">Score</p><p className="text-2xl font-bold text-[var(--accent)]">{result.score} / {result.total}</p></div><div><p className="text-xs text-[var(--muted)] font-bold uppercase mb-1">Percentage</p><p className="text-2xl font-bold text-[var(--accent)]">{result.percentage}%</p></div></div>}{result.feedback && <p className="text-sm text-[var(--text2)] mb-4">Teacher feedback: {result.feedback}</p>}<button onClick={() => { setExam(null); setResult(null); setSubmitted(false); initializedExamRef.current = null }} className="w-full bg-indigo-600 text-white font-semibold py-3 rounded-xl">Close</button></div></div>
   }
-
-  if (!exam) {
-    return (
-      <div className="h-full flex items-center justify-center p-6 text-center text-[var(--muted)]">
-        <div>
-          <p className="text-5xl mb-3">📝</p>
-          <p className="font-medium text-[var(--muted)]">No active exam running right now</p>
-          <p className="text-sm text-[var(--muted)] mt-1">When the teacher launches a test, it will automatically load here.</p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Timer / Header */}
-      <div className="bg-[var(--card)] border-b border-[var(--border)] px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h3 className="font-bold text-white text-base leading-none">{exam.title}</h3>
-          <p className="text-[var(--muted)] text-xs mt-1">{exam.questions?.length || 0} Multiple Choice Questions</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[var(--muted)] font-medium">Time Remaining:</span>
-          <span className="font-mono bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)] px-3 py-1.5 rounded-lg font-bold text-sm">
-            ⏳ {formatTime(timeLeft)}
-          </span>
-        </div>
-      </div>
-
-      {/* Questions list */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto w-full">
-        {exam.questions?.map((q, qi) => (
-          <div key={qi} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)]">
-            <p className="font-bold text-white text-sm mb-3">Q{qi + 1}. {q.text}</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {q.options?.map((opt, oi) => (
-                <button key={oi} onClick={() => selectOption(qi, oi)}
-                  className={`text-left p-3.5 rounded-xl border text-sm transition-all
-                    ${answers[qi] === oi
-                      ? 'bg-[var(--accent-soft)] border-indigo-500 text-[var(--text)] font-medium'
-                      : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text2)] hover:border-[var(--border)]'}`}>
-                  <span className="inline-block w-6 h-6 rounded-lg bg-[var(--card)] text-center leading-6 text-xs text-[var(--muted)] font-bold mr-2.5">
-                    {String.fromCharCode(65 + oi)}
-                  </span>
-                  {opt}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        <div className="pt-4 pb-12 flex justify-end">
-          <button onClick={submitAnswers}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3.5 rounded-xl transition-all shadow-lg shadow-indigo-600/25">
-            Submit Exam
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  if (!exam) return <div className="h-full flex items-center justify-center p-6 text-center text-[var(--muted)]"><div><p className="text-5xl mb-3">📝</p><p className="font-medium">No active exam running right now</p><p className="text-sm mt-1">When the teacher launches an assessment, it will load here.</p></div></div>
+  return <div className="h-full flex flex-col"><div className="bg-[var(--card)] border-b border-[var(--border)] px-6 py-3 flex items-center justify-between flex-shrink-0"><div><h3 className="font-bold text-[var(--text)] text-base">{exam.title}</h3><p className="text-[var(--muted)] text-xs mt-1">{exam.questions?.length || 0} questions · mixed response</p></div><div className="flex items-center gap-3"><span className="text-xs text-[var(--muted)]">Time remaining:</span><span className="font-mono bg-[var(--red-soft)] text-[var(--red)] px-3 py-1.5 rounded-lg font-bold text-sm">⏳ {formatTime(timeLeft)}</span></div></div><div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto w-full">{exam.questions?.map((q, index) => <div key={index} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)]"><p className="font-bold text-[var(--text)] text-sm mb-3">Q{index + 1}. {q.text} <span className="text-[var(--muted)] font-normal">({q.points || 1} pts · {q.type.replace('_', ' ')})</span></p>{q.type === 'mcq' ? <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{q.options?.map((option, oi) => <button key={oi} onClick={() => setAnswer(index, oi)} className={`text-left p-3.5 rounded-xl border text-sm ${answers[index] === oi ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--text)] font-medium' : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text2)]'}`}><span className="inline-block w-6 h-6 rounded-lg bg-[var(--card)] text-center leading-6 text-xs text-[var(--muted)] font-bold mr-2.5">{String.fromCharCode(65 + oi)}</span>{option}</button>)}</div> : <textarea value={answers[index] || ''} onChange={e => setAnswer(index, e.target.value)} rows={q.type === 'long_answer' || q.type === 'code' ? 8 : 4} spellCheck={q.type !== 'code'} className={`w-full p-3 rounded-lg border border-[var(--border2)] bg-[var(--surface)] text-[var(--text)] ${q.type === 'code' ? 'font-mono bg-[#0d1117] text-[#e2e8f0]' : ''}`} placeholder={q.type === 'code' ? `Write your ${q.language || ''} solution...` : 'Write your answer...'} />}</div>)}<div className="pt-4 pb-12 flex justify-end"><button disabled={submitting} onClick={submitAnswers} className="bg-indigo-600 text-white font-bold px-8 py-3.5 rounded-xl disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit assessment'}</button></div></div></div>
 }

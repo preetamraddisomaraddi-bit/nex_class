@@ -25,7 +25,7 @@ edusync/
 │       ├── notes.js              ← Converted database calls to async promise helpers
 │       ├── exam.js               ← Converted database calls to async promise helpers
 │       ├── code.js               ← Converted database calls to async promise helpers
-│       ├── ai.js                 ← Claude API endpoint with local syntax checker fallback
+│       ├── ai.js                 ← Gemini API endpoints with local syntax checker fallback
 │       ├── badges.js             ← Computes & awards student badges dynamically
 │       ├── pdfs.js               ← Saves pushed PDFs in BLOBs, maps students, streams file downloads
 │       ├── universities.js       ← [NEW] Statistics summaries, low attendance alerts, monthly session logs
@@ -106,9 +106,10 @@ edusync/
 ### 1. Database Driver Mismatch Resolution (Backend)
 - Converted all database queries from synchronous `better-sqlite3` formatting (`db.prepare().run()`) to asynchronous promise-based queries (`dbGet`, `dbRun`, `dbAll`) defined in `server/db/database.js`. This prevents driver runtime exceptions with standard `sqlite3` on Windows.
 
-### 2. AI-Powered Code Guidance & Hints (Backend + Student App)
-- Developed a new `/api/ai/hint` endpoint in the backend. When a student clicks **Ask AI** in the Code tab, the system calls the Anthropic Claude API using `CLAUDE_API_KEY` (or `ANTHROPIC_API_KEY`) and returns suggestions.
-- **Offline Fallback**: If the server has no internet or the API key is missing, it parses the code locally (checking for unmatched brackets, missing colons in Python blocks, uninitialized JS const definitions) and gives the student heuristic feedback.
+### 2. Gemini AI Question Drafting & Code Guidance (Backend + Teacher + Student Apps)
+- The teacher exam form can request editable MCQ, short-answer, long-answer, and code question drafts from the Gemini API. Teachers review and edit drafts before saving an exam.
+- When a student clicks **Ask AI** in the Code tab, the backend sends the code to Gemini for concise hints. Without a Gemini key or during an API failure, the server falls back to local code checks.
+- Configure `GEMINI_API_KEY` in `server/.env`; optionally set `GEMINI_MODEL`. The key remains on the server and is never sent to either app.
 
 ### 3. Student Achievements & Badges (Backend + Student App)
 - Developed a new `/api/badges/student/:student_id` endpoint.

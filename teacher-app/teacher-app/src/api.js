@@ -41,9 +41,19 @@ export const endRoom = code => api.patch(`/api/rooms/${encodeURIComponent(code)}
 export const getRoomDetail = code => api.get(`/api/rooms/${encodeURIComponent(code)}`)
 
 // Exams and scores
-export const createExam = data => api.post('/api/exams', data)
-export const getExam = examId => api.get(`/api/exams/${examId}`)
-export const getExamScores = examId => api.get(`/api/scores/exam/${examId}`)
+export const createExam = data => api.post('/api/exam/create', {
+  ...data,
+  questions: data.questions || data.questions_json
+})
+export const getExam = examId => api.get(`/api/exam/${examId}`)
+export const getRoomExams = roomId => api.get(`/api/exam/room/${roomId}`)
+export const launchExam = examId => api.patch(`/api/exam/${examId}/launch`)
+export const getExamScores = examId => api.get(`/api/exam/${examId}/results`)
+export const gradeExamSubmission = (examId, submissionId, data) =>
+  api.patch(`/api/exam/${examId}/submissions/${submissionId}/grade`, data)
+export const getCodeSubmissions = roomId => api.get(`/api/code/room/${roomId}`)
+export const reviewCodeSubmission = (submissionId, data) =>
+  api.patch(`/api/code/${submissionId}/review`, data)
 
 // Existing pages use this accessor; it now points at the HOD server API.
 export const getAPI = () => api

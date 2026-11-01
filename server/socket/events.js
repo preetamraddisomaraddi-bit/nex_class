@@ -1,4 +1,5 @@
 const { dbGet, dbAll, dbRun } = require('../db/database');
+const jwt = require('jsonwebtoken');
 
 const roomMembers = {};
 const socketUsers = {};
@@ -10,8 +11,39 @@ function registerSocketEvents(io) {
     console.log(`[Socket] Connected: ${socket.id}`);
 
     // Join Room
-    socket.on('room:join', ({ room_code, user }) => {
+    socket.on('room:join', async ({ room_code, user }) => {
+      let identity;
+      try {
+        const token = socket.handshake.auth?.token;
+        if (!token) throw new Error('missing token');
+        identity = jwt.verify(token, process.env.JWT_SECRET || 'edusync_secret_key_2024');
+      } catch {
+        socket.emit('room:error', { error: 'Sign in is required to join a classroom.' });
+        return;
+      }
+      if (!room_code || !user || Number(identity.id) !== Number(user.id) || identity.role !== user.role || !['teacher', 'student'].includes(identity.role)) {
+        socket.emit('room:error', { error: 'Your account cannot join this classroom.' });
+        return;
+      }
+      user = { ...user, id: identity.id, role: identity.role };
       const code = room_code.toUpperCase();
+      try {
+        const room = await dbGet('SELECT * FROM rooms WHERE code = ? AND status = \'active\'', [code]);
+        if (!room) { socket.emit('room:error', { error: 'Classroom is unavailable.' }); return; }
+        if (identity.role === 'teacher' && Number(room.teacher_id) !== Number(identity.id)) {
+          socket.emit('room:error', { error: 'Only the classroom teacher can join as teacher.' }); return;
+        }
+        if (identity.role === 'student') {
+          const student = await dbGet('SELECT university_id, department_id, semester_id FROM students WHERE id = ?', [identity.id]);
+          if (!student || (room.university_id && student.university_id && room.university_id !== student.university_id) ||
+              (room.department_id && student.department_id && room.department_id !== student.department_id) ||
+              (room.semester_id && student.semester_id && room.semester_id !== student.semester_id)) {
+            socket.emit('room:error', { error: 'This classroom is not assigned to your enrollment.' }); return;
+          }
+        }
+      } catch {
+        socket.emit('room:error', { error: 'Could not verify classroom access.' }); return;
+      }
       socket.join(code);
       if (!roomMembers[code]) roomMembers[code] = new Set();
       roomMembers[code].add(socket.id);
@@ -74,31 +106,7 @@ function registerSocketEvents(io) {
     socket.on('code:broadcast', ({ room_code, code, language }) => {
       socket.to(room_code.toUpperCase()).emit('code:broadcast', { code, language });
     });
-    socket.on('code:submit', ({ room_code, student, code, language, output }) => {
-      socket.to(room_code.toUpperCase()).emit('code:submitted', { student, code, language, output });
-    });
-
-    // Exam
-    socket.on('exam:launch', async ({ room_code, exam }) => {
-      try {
-        const room = await dbGet('SELECT id FROM rooms WHERE code = ?', [room_code.toUpperCase()]);
-        if (!room) return;
-        const updated = await dbRun("UPDATE exams SET status = 'active', launched_at = CURRENT_TIMESTAMP WHERE id = ? AND room_id = ?", [exam.id, room.id]);
-        if (!updated.changes) return;
-        const saved = await dbGet('SELECT * FROM exams WHERE id = ?', [exam.id]);
-        socket.to(room_code.toUpperCase()).emit('exam:launched', {
-          exam: { ...saved, questions: JSON.parse(saved.questions) }
-        });
-      } catch (err) { console.error('[Socket] Exam launch error:', err.message); }
-    });
-    socket.on('exam:submit', ({ room_code, student, exam_id, score, total }) => {
-      socket.to(room_code.toUpperCase()).emit('exam:student_submitted', { student, exam_id, score, total });
-    });
-    socket.on('exam:end', ({ room_code, exam_id }) => {
-      dbRun("UPDATE exams SET status = 'ended' WHERE id = ?", [exam_id]).catch(() => {});
-      io.to(room_code.toUpperCase()).emit('exam:ended', { exam_id });
-    });
-
+    // Exam launch and grading now go through authenticated HTTP routes.
     // Screen share (WebRTC signaling)
     socket.on('screen:start', ({ room_code }) => {
       const code = room_code.toUpperCase();
