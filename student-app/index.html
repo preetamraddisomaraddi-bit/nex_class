@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NexClass — Student App</title>
+    <script>
+      try {
+        const theme = localStorage.getItem('nexclass_theme')
+        document.documentElement.dataset.theme = ['white', 'light', 'dark'].includes(theme) ? theme : 'white'
+      } catch {
+        document.documentElement.dataset.theme = 'white'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

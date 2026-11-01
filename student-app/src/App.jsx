@@ -9,7 +9,7 @@ function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth()
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 text-slate-300 flex items-center justify-center">
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text2)] flex items-center justify-center">
         Loading NexClass...
       </div>
     )

@@ -1,3 +1,5 @@
+import { useTheme } from '../context/ThemeContext.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getRoomDetail, endRoom, createExam, getExam, getExamScores } from '../api.js'
@@ -35,7 +37,7 @@ export default function Classroom() {
   async function handleScreenRequest({ from }) {
     if (!streamRef.current) return
     console.log(`[WebRTC] Received screen request from student socket: ${from}`)
-    
+
     // Close existing connection if any
     if (peersRef.current[from]) {
       peersRef.current[from].close()
@@ -111,7 +113,7 @@ export default function Classroom() {
   useEffect(() => {
     loadRoom()
     socket?.emit('room:join', { room_code: roomCode, user: { ...teacher, role: 'teacher' } })
-    
+
     socket?.on('room:user_joined', ({ user, socketId }) => {
       if (user.role === 'student') {
         setStudents(prev => {
@@ -361,7 +363,7 @@ export default function Classroom() {
   async function startVideoFileShare(filePath) {
     try {
       if (sharing) stopScreenShare();
-      
+
       let video = videoElementRef.current;
       if (!video) {
         video = document.createElement('video');
@@ -396,10 +398,10 @@ export default function Classroom() {
     try {
       const sources = await window.electronAPI.getScreenSources()
       if (!sources || sources.length === 0) return alert('No display/window sources found.')
-      
+
       // Auto-select primary screen/window
       const primary = sources.find(s => s.name.toLowerCase().includes('screen') || s.name.toLowerCase().includes('display')) || sources[0]
-      
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -436,13 +438,13 @@ export default function Classroom() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0f172a] text-white overflow-hidden relative">
+    <div className="h-screen flex flex-col bg-[var(--bg)] text-white overflow-hidden relative">
 
       {/* LibreOffice install notice */}
       {libreOfficeError && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-red-900/90 text-red-200 border border-red-500/40 rounded-xl px-6 py-4 shadow-xl z-50 max-w-lg text-center">
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)] rounded-xl px-6 py-4 shadow-xl z-50 max-w-lg text-center">
           <p className="font-bold text-sm mb-1">LibreOffice Required</p>
-          <p className="text-xs text-slate-300 leading-relaxed mb-3">
+          <p className="text-xs text-[var(--text2)] leading-relaxed mb-3">
             PowerPoint conversion requires LibreOffice. Please download and install it, or select a PDF file instead.
           </p>
           <div className="flex justify-center gap-2">
@@ -452,48 +454,49 @@ export default function Classroom() {
       )}
 
       {/* Top bar */}
-      <header className="bg-[#1e293b] border-b border-slate-700/50 pl-6 pr-[140px] py-3 flex items-center justify-between drag-region flex-shrink-0">
+      <header className="bg-[var(--card)] border-b border-[var(--border)] pl-6 pr-[140px] py-3 flex items-center justify-between drag-region flex-shrink-0">
         <div className="flex items-center gap-4 no-drag">
-          <button onClick={() => navigate('/dashboard')} className="text-slate-400 hover:text-white transition-colors">←</button>
+          <button onClick={() => navigate('/dashboard')} className="text-[var(--muted)] hover:text-[var(--text)] transition-colors">←</button>
           <div>
             <h1 className="font-bold text-white leading-none">{room?.subject} — {room?.class_name}</h1>
-            <p className="text-xs text-slate-400">{room?.topic || 'No topic set'}</p>
+            <p className="text-xs text-[var(--muted)]">{room?.topic || 'No topic set'}</p>
           </div>
-          <span className="font-mono bg-indigo-600/20 text-indigo-400 px-3 py-1 rounded-lg text-sm font-bold border border-indigo-600/30">
+          <span className="font-mono bg-[var(--accent-soft)] text-[var(--accent)] px-3 py-1 rounded-lg text-sm font-bold border border-[var(--border)]">
             {roomCode}
           </span>
-          <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full">
+          <span className="text-xs text-[var(--green)] bg-[var(--green-soft)] px-2 py-1 rounded-full">
             🟢 {students.length} student{students.length !== 1 ? 's' : ''} joined
           </span>
         </div>
         <div className="flex items-center gap-2 no-drag">
+          <ThemeToggle compact />
           <button onClick={handlePushPDF}
-            className="text-sm px-3.5 py-2 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 font-semibold transition-colors">
+            className="text-sm px-3.5 py-2 rounded-lg bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--border)] font-semibold transition-colors">
             📄 Push PDF
           </button>
           <button onClick={handlePresentFile}
-            className="text-sm px-3.5 py-2 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 font-semibold transition-colors">
+            className="text-sm px-3.5 py-2 rounded-lg bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--border)] font-semibold transition-colors">
             📽️ Present File
           </button>
           <button onClick={startScreenShare}
             className={`text-sm px-3.5 py-2 rounded-lg transition-colors border border-transparent font-semibold hover:bg-indigo-500
-              ${sharing 
-                ? 'bg-red-600/20 text-red-400 border-red-500/30 hover:bg-red-600/30' 
+              ${sharing
+                ? 'bg-[var(--red-soft)] text-[var(--red)] border-[var(--border)] hover:bg-[var(--red-soft)]'
                 : 'bg-indigo-600 text-white'}`}>
             {sharing ? '🟥 Stop Share' : '🖥️ Share Screen'}
           </button>
-          <button onClick={endClass} className="bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm px-3.5 py-2 rounded-lg transition-colors border border-red-500/20">
+          <button onClick={endClass} className="bg-[var(--red-soft)] hover:bg-[var(--red-soft)] text-[var(--red)] text-sm px-3.5 py-2 rounded-lg transition-colors border border-[var(--border)]">
             End Class
           </button>
         </div>
       </header>
 
       {/* Tabs */}
-      <nav className="bg-[#1e293b] border-b border-slate-700/50 px-6 flex gap-1 flex-shrink-0">
+      <nav className="bg-[var(--card)] border-b border-[var(--border)] px-6 flex gap-1 flex-shrink-0">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px
-              ${tab === t ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+              ${tab === t ? 'border-[var(--border)] text-[var(--accent)]' : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'}`}>
             {t}
           </button>
         ))}
@@ -503,26 +506,26 @@ export default function Classroom() {
       <div className="flex-1 overflow-hidden">
         {tab === 'Board' && (
           presenting ? (
-            <div className="h-full flex flex-col bg-[#0f172a] border border-slate-700/30 relative">
-              <div className="bg-[#1e293b] border-b border-slate-700/50 px-6 py-3 flex items-center justify-between">
+            <div className="h-full flex flex-col bg-[var(--bg)] border border-[var(--border)] relative">
+              <div className="bg-[var(--card)] border-b border-[var(--border)] px-6 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
                   <p className="text-sm font-semibold text-white">Presenting: {presentingFilename}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <button onClick={handlePrevSlide} disabled={slideIndex === 0}
-                    className="bg-slate-750 border border-slate-600 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-750 text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    className="bg-[var(--card2)] border border-[var(--border2)] hover:bg-[var(--card2)] disabled:opacity-30 disabled:hover:bg-[var(--card2)] text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
                     ◀ Prev Slide
                   </button>
-                  <span className="text-xs text-indigo-400 font-mono font-bold bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded">
+                  <span className="text-xs text-[var(--accent)] font-mono font-bold bg-[var(--accent-soft)] border border-[var(--border)] px-2.5 py-1 rounded">
                     Slide {slideIndex + 1} of {slides.length}
                   </span>
                   <button onClick={handleNextSlide} disabled={slideIndex === slides.length - 1}
-                    className="bg-slate-750 border border-slate-600 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-750 text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    className="bg-[var(--card2)] border border-[var(--border2)] hover:bg-[var(--card2)] disabled:opacity-30 disabled:hover:bg-[var(--card2)] text-white text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
                     Next Slide ▶
                   </button>
                   <button onClick={handleStopPresentation}
-                    className="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
+                    className="bg-[var(--red-soft)] hover:bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)] text-xs px-3 py-1.5 rounded-lg transition-colors font-medium">
                     Stop Presenting
                   </button>
                 </div>
@@ -532,10 +535,10 @@ export default function Classroom() {
               </div>
             </div>
           ) : sharing ? (
-            <div className="h-full flex flex-col items-center justify-center bg-[#0f172a] text-slate-400 p-6 text-center select-none">
+            <div className="h-full flex flex-col items-center justify-center bg-[var(--bg)] text-[var(--muted)] p-6 text-center select-none">
               <span className="text-6xl mb-4">🖥️</span>
               <h3 className="text-xl font-bold text-white mb-2">Screen Share Active</h3>
-              <p className="max-w-md text-sm text-slate-400">
+              <p className="max-w-md text-sm text-[var(--muted)]">
                 You are currently broadcasting your screen to all students. Whiteboard is hidden.
               </p>
             </div>
@@ -555,10 +558,14 @@ export default function Classroom() {
 
 // ── BOARD TAB ──────────────────────────────────────────────
 function BoardTab({ roomCode, socket }) {
+  const { theme } = useTheme()
+  const defaultInk = theme === 'dark' ? '#ffffff' : '#111827'
+  const boardBackground = theme === 'dark' ? '#161B27' : '#FFFFFF'
+  const strokes = useRef([])
   const canvasRef = useRef(null)
   const [drawing, setDrawing] = useState(false)
   const [tool, setTool] = useState('pen')
-  const [color, setColor] = useState('#ffffff')
+  const [color, setColor] = useState('default')
   const [size, setSize] = useState(3)
   const lastPos = useRef(null)
   const ctxRef = useRef(null)
@@ -573,6 +580,28 @@ function BoardTab({ roomCode, socket }) {
     ctxRef.current = ctx
   }, [])
 
+  // Repaint only the local canvas palette; never emit clear events on theme changes.
+  function paintStroke(stroke) {
+    const ctx = ctxRef.current
+    ctx.save()
+    ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over'
+    ctx.strokeStyle = stroke.color === 'default' ? defaultInk : stroke.color
+    ctx.lineWidth = stroke.size
+    ctx.beginPath()
+    ctx.moveTo(stroke.from.x, stroke.from.y)
+    ctx.lineTo(stroke.to.x, stroke.to.y)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = ctxRef.current
+    if (!ctx || !canvas) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    strokes.current.forEach(paintStroke)
+  }, [theme])
+
   function getPos(e) {
     const r = canvasRef.current.getBoundingClientRect()
     return { x: e.clientX - r.left, y: e.clientY - r.top }
@@ -586,16 +615,12 @@ function BoardTab({ roomCode, socket }) {
   function draw(e) {
     if (!drawing) return
     const pos = getPos(e)
-    const ctx = ctxRef.current
-    ctx.strokeStyle = tool === 'eraser' ? '#0f172a' : color
-    ctx.lineWidth = tool === 'eraser' ? 24 : size
-    ctx.beginPath()
-    ctx.moveTo(lastPos.current.x, lastPos.current.y)
-    ctx.lineTo(pos.x, pos.y)
-    ctx.stroke()
+    const stroke = { from: lastPos.current, to: pos, color, size: tool === 'eraser' ? 24 : size, erase: tool === 'eraser' }
+    strokes.current.push(stroke)
+    paintStroke(stroke)
     emitBoardDraw({
       room_code: roomCode,
-      drawData: { from: lastPos.current, to: pos, color: tool === 'eraser' ? '#0f172a' : color, size: tool === 'eraser' ? 24 : size }
+      drawData: { from: lastPos.current, to: pos, color: tool === 'eraser' ? boardBackground : color === 'default' ? defaultInk : color, size: tool === 'eraser' ? 24 : size }
     })
     lastPos.current = pos
   }
@@ -603,21 +628,22 @@ function BoardTab({ roomCode, socket }) {
   function stopDraw() { setDrawing(false); lastPos.current = null }
 
   function clearBoard() {
+    strokes.current = []
     ctxRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
     emitBoardClear({ room_code: roomCode })
   }
 
-  const colors = ['#ffffff', '#f87171', '#fb923c', '#facc15', '#4ade80', '#60a5fa', '#a78bfa', '#f472b6']
+  const colors = ['default', '#f87171', '#fb923c', '#facc15', '#4ade80', '#60a5fa', '#a78bfa', '#f472b6']
 
   return (
     <div className="h-full flex flex-col">
       {/* Toolbar */}
-      <div className="bg-[#1e293b] border-b border-slate-700/50 px-4 py-2 flex items-center gap-4 flex-shrink-0">
+      <div className="bg-[var(--card)] border-b border-[var(--border)] px-4 py-2 flex items-center gap-4 flex-shrink-0">
         <div className="flex gap-2">
           {['pen', 'eraser'].map(t => (
             <button key={t} onClick={() => setTool(t)}
               className={`px-3 py-1.5 rounded-lg text-sm capitalize transition-colors
-                ${tool === t ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                ${tool === t ? 'bg-indigo-600 text-white' : 'bg-[var(--card2)] text-[var(--text2)] hover:bg-[var(--card2)]'}`}>
               {t === 'pen' ? '✏️ Pen' : '🧹 Eraser'}
             </button>
           ))}
@@ -625,19 +651,20 @@ function BoardTab({ roomCode, socket }) {
         <div className="flex gap-1.5">
           {colors.map(c => (
             <button key={c} onClick={() => { setColor(c); setTool('pen') }}
-              className={`w-6 h-6 rounded-full border-2 transition-all ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
-              style={{ background: c }} />
+              className={`w-6 h-6 rounded-full border-2 transition-all ${color === c && tool === 'pen' ? 'border-[var(--accent)] scale-110' : 'border-transparent'}`}
+              style={{ background: c === 'default' ? defaultInk : c }}
+              title={c === 'default' ? 'Default pen (follows theme)' : c} aria-label={c === 'default' ? 'Default pen' : `Pen ${c}`} />
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">Size</span>
+          <span className="text-xs text-[var(--muted)]">Size</span>
           <input type="range" min="1" max="20" value={size} onChange={e => setSize(+e.target.value)} className="w-20" />
         </div>
-        <button onClick={clearBoard} className="ml-auto bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1.5 rounded-lg text-sm transition-colors">
+        <button onClick={clearBoard} className="ml-auto bg-[var(--red-soft)] hover:bg-[var(--red-soft)] text-[var(--red)] px-3 py-1.5 rounded-lg text-sm transition-colors">
           Clear Board
         </button>
       </div>
-      <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair bg-[#0f172a]"
+      <canvas ref={canvasRef} className="flex-1 w-full cursor-crosshair bg-[var(--board-bg)]"
         onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw} />
     </div>
   )
@@ -672,29 +699,29 @@ function NotesTab({ roomCode, room }) {
       <div className="flex-1 p-6 overflow-y-auto">
         <h3 className="font-semibold text-white mb-4">Pushed Notes ({notes.length})</h3>
         {notes.length === 0 ? (
-          <div className="text-center text-slate-500 mt-12">
+          <div className="text-center text-[var(--muted)] mt-12">
             <p className="text-4xl mb-2">📝</p>
             <p>No notes pushed yet</p>
           </div>
         ) : (
           <div className="space-y-3">
             {notes.map(n => (
-              <div key={n.id} className="bg-[#1e293b] rounded-xl p-4 border border-slate-700/40">
+              <div key={n.id} className="bg-[var(--card)] rounded-xl p-4 border border-[var(--border)]">
                 <p className="font-medium text-white text-sm mb-1">{n.title || 'Class Note'}</p>
-                <p className="text-slate-300 text-sm whitespace-pre-wrap">{n.content}</p>
-                <p className="text-slate-500 text-xs mt-2">{new Date(n.pushed_at).toLocaleTimeString()}</p>
+                <p className="text-[var(--text2)] text-sm whitespace-pre-wrap">{n.content}</p>
+                <p className="text-[var(--muted)] text-xs mt-2">{new Date(n.pushed_at).toLocaleTimeString()}</p>
               </div>
             ))}
           </div>
         )}
       </div>
-      <div className="w-80 border-l border-slate-700/50 p-6 flex flex-col gap-4 bg-[#1e293b]">
+      <div className="w-80 border-l border-[var(--border)] p-6 flex flex-col gap-4 bg-[var(--card)]">
         <h3 className="font-semibold text-white">Push Note to Students</h3>
         <input value={title} onChange={e => setTitle(e.target.value)}
-          className="bg-[#0f172a] border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]"
           placeholder="Note title (optional)" />
         <textarea value={content} onChange={e => setContent(e.target.value)} rows={8}
-          className="bg-[#0f172a] border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+          className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)] resize-none"
           placeholder="Type your note here..." />
         <button onClick={pushNote} disabled={!content.trim()}
           className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-semibold py-3 rounded-xl transition-colors">
@@ -718,9 +745,9 @@ function CodeTab({ roomCode, socket }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="bg-[#1e293b] border-b border-slate-700/50 px-4 py-2 flex items-center gap-4">
+      <div className="bg-[var(--card)] border-b border-[var(--border)] px-4 py-2 flex items-center gap-4">
         <select value={language} onChange={e => setLanguage(e.target.value)}
-          className="bg-[#0f172a] border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white">
+          className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-1.5 text-sm text-white">
           {languages.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
         <button onClick={broadcast} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
@@ -728,7 +755,7 @@ function CodeTab({ roomCode, socket }) {
         </button>
       </div>
       <textarea value={code} onChange={e => setCode(e.target.value)}
-        className="flex-1 bg-[#0d1117] text-green-400 font-mono text-sm p-6 resize-none focus:outline-none"
+        className="flex-1 bg-[#0d1117] text-[#86efac] font-mono text-sm p-6 resize-none focus:outline-none"
         spellCheck={false} />
     </div>
   )
@@ -750,7 +777,7 @@ function AttendanceTab({ roomCode, room, students }) {
 
   function exportCSV() {
     if (records.length === 0) return alert('No attendance records to export')
-    
+
     const headers = ['Student Name', 'Roll Number', 'Class Section', 'Status', 'Joined Time']
     const rows = records.map(r => [
       r.name,
@@ -760,9 +787,9 @@ function AttendanceTab({ roomCode, room, students }) {
       r.joined_at ? new Date(r.joined_at).toLocaleString() : ''
     ])
 
-    const csvContent = "data:text/csv;charset=utf-8," 
+    const csvContent = "data:text/csv;charset=utf-8,"
       + [headers.join(','), ...rows.map(e => e.map(val => `"${val.replace(/"/g, '""')}"`).join(','))].join('\n')
-      
+
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -779,15 +806,15 @@ function AttendanceTab({ roomCode, room, students }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="font-semibold text-white text-lg">Attendance</h3>
-          <p className="text-slate-400 text-sm">{present} / {records.length} present</p>
+          <p className="text-[var(--muted)] text-sm">{present} / {records.length} present</p>
         </div>
         <button onClick={exportCSV}
-          className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-600/30 text-sm px-4 py-2 rounded-lg transition-colors font-medium">
+          className="bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--border)] text-sm px-4 py-2 rounded-lg transition-colors font-medium">
           📥 Export CSV
         </button>
       </div>
       {records.length === 0 ? (
-        <div className="text-center text-slate-500 mt-12">
+        <div className="text-center text-[var(--muted)] mt-12">
           <p className="text-4xl mb-2">📋</p>
           <p>No students have joined yet</p>
         </div>
@@ -799,16 +826,16 @@ function AttendanceTab({ roomCode, room, students }) {
             const isFocused = joinedStud ? joinedStud.is_focused !== false : true;
 
             return (
-              <div key={r.id} className="bg-[#1e293b] rounded-xl px-5 py-3 flex items-center justify-between border border-slate-700/40">
+              <div key={r.id} className="bg-[var(--card)] rounded-xl px-5 py-3 flex items-center justify-between border border-[var(--border)]">
                 <div className="flex items-center gap-3">
                   <div className="relative">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white avatar-ink"
                        style={{ background: r.avatar_color }}>
                       {r.name?.slice(0,1).toUpperCase()}
                     </div>
                     {/* Status Dot indicator */}
-                    <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#1e293b]
-                      ${isOnline 
+                    <span className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[var(--border)]
+                      ${isOnline
                         ? (isFocused ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse')
                         : 'bg-red-500'}`}
                       title={isOnline ? (isFocused ? 'Online & Focused' : 'Distracted / Tab Exit') : 'Offline'}>
@@ -818,12 +845,12 @@ function AttendanceTab({ roomCode, room, students }) {
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-white text-sm">{r.name}</p>
                       {isOnline && !isFocused && (
-                        <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                        <span className="text-[10px] bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--border)] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
                           Distracted ⚠️
                         </span>
                       )}
                     </div>
-                    <p className="text-slate-400 text-xs">USN: {r.usn || r.roll_no || '—'} · {r.status}</p>
+                    <p className="text-[var(--muted)] text-xs">USN: {r.usn || r.roll_no || '—'} · {r.status}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -831,10 +858,10 @@ function AttendanceTab({ roomCode, room, students }) {
                     <button key={s} onClick={() => updateStatus(r.student_id, s)}
                       className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition-colors
                         ${r.status === s
-                          ? s === 'present' ? 'bg-emerald-500/30 text-emerald-400 border border-emerald-500/40'
-                            : s === 'absent' ? 'bg-red-500/30 text-red-400 border border-red-500/40'
-                            : 'bg-amber-500/30 text-amber-400 border border-amber-500/40'
-                          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
+                          ? s === 'present' ? 'bg-[var(--green-soft)] text-[var(--green)] border border-[var(--border)]'
+                            : s === 'absent' ? 'bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)]'
+                            : 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--border)]'
+                          : 'bg-[var(--card2)] text-[var(--muted)] hover:bg-[var(--card2)]'}`}>
                       {s}
                     </button>
                   ))}
@@ -909,7 +936,7 @@ function ExamTab({ roomCode, room, socket }) {
 
   function exportExamResults() {
     if (!selectedResults || resultsList.length === 0) return alert('No results to export')
-    
+
     const headers = ['Student Name', 'Roll Number', 'Score', 'Total Questions', 'Percentage', 'Submitted Time']
     const rows = resultsList.map(r => [
       r.name,
@@ -920,9 +947,9 @@ function ExamTab({ roomCode, room, socket }) {
       r.submitted_at ? new Date(r.submitted_at).toLocaleString() : ''
     ])
 
-    const csvContent = "data:text/csv;charset=utf-8," 
+    const csvContent = "data:text/csv;charset=utf-8,"
       + [headers.join(','), ...rows.map(e => e.map(val => `"${val.toString().replace(/"/g, '""')}"`).join(','))].join('\n')
-      
+
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -934,13 +961,13 @@ function ExamTab({ roomCode, room, socket }) {
 
   return (
     <div className="h-full overflow-y-auto p-6">
-      
+
       {selectedResults ? (
         // Results Sub-view
-        <div className="bg-[#1e293b] rounded-2xl p-6 border border-slate-700">
+        <div className="bg-[var(--card)] rounded-2xl p-6 border border-[var(--border)]">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <button onClick={() => setSelectedResults(null)} className="text-sm text-indigo-400 hover:text-indigo-300 mb-2 block">← Back to Exams</button>
+              <button onClick={() => setSelectedResults(null)} className="text-sm text-[var(--accent)] hover:text-[var(--accent)] mb-2 block">← Back to Exams</button>
               <h3 className="font-bold text-white text-xl">{selectedResults.title} — Results</h3>
             </div>
             <div className="flex gap-2">
@@ -948,19 +975,19 @@ function ExamTab({ roomCode, room, socket }) {
                 className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium">
                 📥 Export CSV
               </button>
-              <button onClick={() => setSelectedResults(null)} className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+              <button onClick={() => setSelectedResults(null)} className="bg-[var(--card2)] hover:bg-[var(--card2)] text-white text-sm px-4 py-2 rounded-lg transition-colors">
                 Close
               </button>
             </div>
           </div>
-          
+
           {resultsList.length === 0 ? (
-            <p className="text-slate-500 text-sm text-center py-8">No submissions yet for this exam.</p>
+            <p className="text-[var(--muted)] text-sm text-center py-8">No submissions yet for this exam.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-700 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  <tr className="border-b border-[var(--border)] text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
                     <th className="py-3 px-4">Student</th>
                     <th className="py-3 px-4">Roll Number</th>
                     <th className="py-3 px-4">Score</th>
@@ -968,19 +995,19 @@ function ExamTab({ roomCode, room, socket }) {
                     <th className="py-3 px-4">Submitted At</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/50 text-sm text-slate-300">
+                <tbody className="divide-y divide-[var(--border)] text-sm text-[var(--text2)]">
                   {resultsList.map(r => (
-                    <tr key={r.id} className="hover:bg-slate-850">
+                    <tr key={r.id} className="hover:bg-[var(--card2)]">
                       <td className="py-3.5 px-4 flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: r.avatar_color }}>
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white avatar-ink" style={{ background: r.avatar_color }}>
                           {r.name?.slice(0,1)}
                         </div>
                         {r.name}
                       </td>
                       <td className="py-3.5 px-4 font-mono">{r.roll_no}</td>
                       <td className="py-3.5 px-4 font-semibold text-white">{r.score} / {r.total}</td>
-                      <td className="py-3.5 px-4 font-semibold text-indigo-400">{r.percentage}%</td>
-                      <td className="py-3.5 px-4 text-xs text-slate-400">{new Date(r.submitted_at).toLocaleTimeString()}</td>
+                      <td className="py-3.5 px-4 font-semibold text-[var(--accent)]">{r.percentage}%</td>
+                      <td className="py-3.5 px-4 text-xs text-[var(--muted)]">{new Date(r.submitted_at).toLocaleTimeString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -999,27 +1026,27 @@ function ExamTab({ roomCode, room, socket }) {
           </div>
 
           {creating && (
-            <div className="bg-[#1e293b] rounded-2xl p-6 mb-6 border border-slate-700">
+            <div className="bg-[var(--card)] rounded-2xl p-6 mb-6 border border-[var(--border)]">
               <h4 className="font-semibold text-white mb-4">New Exam</h4>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Exam Title</label>
+                  <label className="text-xs text-[var(--muted)] mb-1 block">Exam Title</label>
                   <input value={title} onChange={e => setTitle(e.target.value)}
-                    className="w-full bg-[#0f172a] border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]"
                     placeholder="Mid-term Quiz" />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Duration (mins)</label>
+                  <label className="text-xs text-[var(--muted)] mb-1 block">Duration (mins)</label>
                   <input type="number" value={duration} onChange={e => setDuration(+e.target.value)}
-                    className="w-full bg-[#0f172a] border border-slate-600 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]" />
                 </div>
               </div>
               <div className="space-y-4 mb-4">
                 {questions.map((q, qi) => (
-                  <div key={qi} className="bg-[#0f172a] rounded-xl p-4 border border-slate-700">
-                    <p className="text-xs text-slate-400 mb-2">Question {qi + 1}</p>
+                  <div key={qi} className="bg-[var(--bg)] rounded-xl p-4 border border-[var(--border)]">
+                    <p className="text-xs text-[var(--muted)] mb-2">Question {qi + 1}</p>
                     <input value={q.text} onChange={e => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,text:e.target.value} : x))}
-                      className="w-full bg-[#1e293b] border border-slate-600 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 mb-3"
+                      className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-[var(--accent)] mb-3"
                       placeholder="Question text..." />
                     <div className="grid grid-cols-2 gap-2">
                       {q.options.map((opt, oi) => (
@@ -1028,7 +1055,7 @@ function ExamTab({ roomCode, room, socket }) {
                             onChange={() => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,correct_index:oi} : x))}
                             className="accent-indigo-500" />
                           <input value={opt} onChange={e => setQuestions(qs => qs.map((x,i) => i===qi ? {...x,options:x.options.map((o,j) => j===oi ? e.target.value : o)} : x))}
-                            className="flex-1 bg-[#1e293b] border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                            className="flex-1 bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[var(--accent)]"
                             placeholder={`Option ${oi+1}`} />
                         </div>
                       ))}
@@ -1037,36 +1064,36 @@ function ExamTab({ roomCode, room, socket }) {
                 ))}
               </div>
               <div className="flex gap-3">
-                <button onClick={addQuestion} className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg transition-colors">+ Add Question</button>
+                <button onClick={addQuestion} className="bg-[var(--card2)] hover:bg-[var(--card2)] text-white text-sm px-4 py-2 rounded-lg transition-colors">+ Add Question</button>
                 <button onClick={createExam} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">Save Exam</button>
-                <button onClick={() => setCreating(false)} className="text-slate-400 hover:text-white text-sm px-4 py-2 transition-colors">Cancel</button>
+                <button onClick={() => setCreating(false)} className="text-[var(--muted)] hover:text-[var(--text)] text-sm px-4 py-2 transition-colors">Cancel</button>
               </div>
             </div>
           )}
 
           <div className="space-y-3">
             {exams.map(exam => (
-              <div key={exam.id} className="bg-[#1e293b] rounded-xl p-5 border border-slate-700/40 flex items-center justify-between">
+              <div key={exam.id} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)] flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-white">{exam.title}</p>
-                  <p className="text-slate-400 text-sm">{exam.questions?.length || 0} questions · {exam.duration_mins} mins</p>
+                  <p className="text-[var(--muted)] text-sm">{exam.questions?.length || 0} questions · {exam.duration_mins} mins</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className={`px-3 py-1 rounded-full text-xs font-medium uppercase
-                    ${exam.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' 
-                      : exam.status === 'ended' ? 'bg-red-500/20 text-red-400' 
-                      : 'bg-slate-700 text-slate-400'}`}>
+                    ${exam.status === 'active' ? 'bg-[var(--green-soft)] text-[var(--green)]'
+                      : exam.status === 'ended' ? 'bg-[var(--red-soft)] text-[var(--red)]'
+                      : 'bg-[var(--card2)] text-[var(--muted)]'}`}>
                     {exam.status}
                   </span>
-                  
+
                   {exam.status === 'draft' && (
                     <button onClick={() => launch(exam)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
                       🚀 Launch
                     </button>
                   )}
-                  
+
                   {exam.status !== 'draft' && (
-                    <button onClick={() => viewResults(exam)} className="bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 text-sm px-4 py-1.5 rounded-lg transition-colors">
+                    <button onClick={() => viewResults(exam)} className="bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-[var(--border)] text-sm px-4 py-1.5 rounded-lg transition-colors">
                       📊 Results
                     </button>
                   )}
@@ -1074,7 +1101,7 @@ function ExamTab({ roomCode, room, socket }) {
               </div>
             ))}
             {exams.length === 0 && !creating && (
-              <div className="text-center text-slate-500 mt-12">
+              <div className="text-center text-[var(--muted)] mt-12">
                 <p className="text-4xl mb-2">📝</p>
                 <p>No exams created yet</p>
               </div>
@@ -1114,23 +1141,23 @@ function SubmissionsTab({ roomCode, room }) {
 
   return (
     <div className="h-full flex overflow-hidden">
-      <div className="w-72 border-r border-slate-700/50 overflow-y-auto p-4">
+      <div className="w-72 border-r border-[var(--border)] overflow-y-auto p-4">
         <h3 className="font-semibold text-white mb-3 text-sm">Live Submissions ({submissions.length})</h3>
         {submissions.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center mt-8">No submissions yet</p>
+          <p className="text-[var(--muted)] text-sm text-center mt-8">No submissions yet</p>
         ) : (
           <div className="space-y-2">
             {submissions.map(s => (
               <button key={s.id} onClick={() => setSelected(s)}
                 className={`w-full text-left p-3 rounded-xl transition-colors border
-                  ${selected?.id === s.id ? 'bg-indigo-600/20 border-indigo-600/40' : 'bg-[#1e293b] border-slate-700/40 hover:border-slate-600'}`}>
+                  ${selected?.id === s.id ? 'bg-[var(--accent-soft)] border-[var(--border)]' : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--border2)]'}`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ background: s.avatar_color }}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white avatar-ink" style={{ background: s.avatar_color }}>
                     {s.name?.slice(0,1)}
                   </div>
                   <p className="font-medium text-white text-sm">{s.name}</p>
                 </div>
-                <p className="text-slate-400 text-xs">{s.language || 'Exam'} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
+                <p className="text-[var(--muted)] text-xs">{s.language || 'Exam'} · {new Date(s.submitted_at).toLocaleTimeString()}</p>
               </button>
             ))}
           </div>
@@ -1140,24 +1167,24 @@ function SubmissionsTab({ roomCode, room }) {
         {selected ? (
           <>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white" style={{ background: selected.avatar_color }}>
+              <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white avatar-ink" style={{ background: selected.avatar_color }}>
                 {selected.name?.slice(0,1)}
               </div>
               <div>
                 <p className="font-semibold text-white">{selected.name} — USN: {selected.usn || selected.roll_no || '—'}</p>
-                <p className="text-slate-400 text-sm">{selected.language} · {new Date(selected.submitted_at).toLocaleString()}</p>
+                <p className="text-[var(--muted)] text-sm">{selected.language} · {new Date(selected.submitted_at).toLocaleString()}</p>
               </div>
             </div>
-            <pre className="bg-[#0d1117] text-green-400 font-mono text-sm p-4 rounded-xl overflow-x-auto border border-slate-700">{selected.code}</pre>
+            <pre className="bg-[#0d1117] text-[#86efac] font-mono text-sm p-4 rounded-xl overflow-x-auto border border-[var(--border)]">{selected.code}</pre>
             {selected.output && (
               <div className="mt-4">
-                <p className="text-xs text-slate-400 mb-2 uppercase tracking-wider">Output</p>
-                <pre className="bg-[#0d1117] text-white font-mono text-sm p-4 rounded-xl border border-slate-700">{selected.output}</pre>
+                <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wider">Output</p>
+                <pre className="bg-[#0d1117] text-[#e2e8f0] font-mono text-sm p-4 rounded-xl border border-[var(--border)]">{selected.output}</pre>
               </div>
             )}
           </>
         ) : (
-          <div className="h-full flex items-center justify-center text-slate-500">
+          <div className="h-full flex items-center justify-center text-[var(--muted)]">
             <div className="text-center">
               <p className="text-4xl mb-2">👈</p>
               <p>Select a submission to view</p>

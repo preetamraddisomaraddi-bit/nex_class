@@ -7,11 +7,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        dark: {
-          900: '#0f172a',
-          800: '#1e293b',
-          700: '#334155',
-        }
+        bg: 'var(--bg)',
+        surface: 'var(--surface)',
+        card: 'var(--card)',
+        card2: 'var(--card2)',
+        border: 'var(--border)',
+        border2: 'var(--border2)',
+        text: 'var(--text)',
+        text2: 'var(--text2)',
+        muted: 'var(--muted)',
+        accent: 'var(--accent)',
+        'accent-soft': 'var(--accent-soft)',
+        green: 'var(--green)',
+        'green-soft': 'var(--green-soft)',
+        amber: 'var(--amber)',
+        'amber-soft': 'var(--amber-soft)',
+        red: 'var(--red)',
+        'red-soft': 'var(--red-soft)',
       }
     },
   },

@@ -4,6 +4,7 @@ import { getAPI, getExam, submitScore } from '../api.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import { getSocket, joinRoom as joinSocketRoom, startHeartbeat, stopHeartbeat, leaveRoom, emitCodeSubmitted, emitExamSubmitted, emitForceClose } from '../socket.js'
 import { jsPDF } from 'jspdf'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const TABS = ['Board', 'Code', 'Notes', 'Exam']
 
@@ -26,7 +27,7 @@ export default function Classroom() {
   const [currentSlideImage, setCurrentSlideImage] = useState(null)
   const [slideIndex, setSlideIndex] = useState(0)
   const [totalSlides, setTotalSlides] = useState(0)
-  
+
   const peerRef = useRef(null)
   const videoRef = useRef(null)
 
@@ -52,7 +53,7 @@ export default function Classroom() {
 
   useEffect(() => {
     loadRoom()
-    
+
     // Lock into kiosk Focus Mode
     if (window.electronAPI) {
       window.electronAPI.enterFocusMode()
@@ -269,17 +270,17 @@ export default function Classroom() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0f172a] text-white overflow-hidden select-none relative">
-      
+    <div className="h-screen flex flex-col bg-[var(--bg)] text-white overflow-hidden select-none relative">
+
       {/* PDF View Modal Overlay */}
       {viewPdfUrl && (
         <div className="fixed inset-0 bg-black/85 flex flex-col z-[9999] p-6 backdrop-blur-sm">
-          <div className="bg-[#1e293b] rounded-t-2xl px-6 py-4 flex items-center justify-between border-b border-slate-750">
+          <div className="bg-[var(--card)] rounded-t-2xl px-6 py-4 flex items-center justify-between border-b border-[var(--border)]">
             <p className="font-bold text-white text-base flex items-center gap-2">
               <span>📄</span> {viewPdfName}
             </p>
-            <button onClick={() => { URL.revokeObjectURL(viewPdfUrl); setViewPdfUrl(''); }} 
-              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-1.5 rounded-lg text-xs font-bold transition-all">
+            <button onClick={() => { URL.revokeObjectURL(viewPdfUrl); setViewPdfUrl(''); }}
+              className="bg-[var(--red-soft)] hover:bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)] px-4 py-1.5 rounded-lg text-xs font-bold transition-all">
               ✕ Close Preview
             </button>
           </div>
@@ -288,32 +289,35 @@ export default function Classroom() {
       )}
 
       {/* Header */}
-      <header className="bg-[#1e293b] border-b border-slate-700/50 pl-6 pr-[140px] py-3 flex items-center justify-between drag-region flex-shrink-0">
+      <header className="bg-[var(--card)] border-b border-[var(--border)] pl-6 pr-[140px] py-3 flex items-center justify-between drag-region flex-shrink-0">
         <div className="flex items-center gap-4 no-drag">
-          <button onClick={() => navigate('/dashboard')} className="text-slate-400 hover:text-white transition-colors">←</button>
+          <button onClick={() => navigate('/dashboard')} className="text-[var(--muted)] hover:text-white transition-colors">←</button>
           <div>
             <h1 className="font-bold text-white leading-none">{room?.subject}</h1>
-            <p className="text-xs text-slate-400">{room?.topic || 'No topic'}</p>
+            <p className="text-xs text-[var(--muted)]">{room?.topic || 'No topic'}</p>
           </div>
-          <span className="font-mono bg-indigo-600/20 text-indigo-400 px-3 py-1 rounded-lg text-sm font-bold border border-indigo-600/30">
+          <span className="font-mono bg-[var(--accent-soft)] text-[var(--accent)] px-3 py-1 rounded-lg text-sm font-bold border border-[var(--border)]">
             {roomCode}
           </span>
-          <span className="text-xs text-slate-400">Teacher: {room?.teacher_name || 'Instructor'}</span>
-          <span className="text-xs text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20 font-semibold flex items-center gap-1">
+          <span className="text-xs text-[var(--muted)]">Teacher: {room?.teacher_name || 'Instructor'}</span>
+          <span className="text-xs text-[var(--amber)] bg-[var(--amber-soft)] px-2.5 py-1 rounded-full border border-[var(--border)] font-semibold flex items-center gap-1">
             🔒 Focus Mode Active
           </span>
         </div>
-        <button onClick={() => navigate('/dashboard')} className="no-drag bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm px-4 py-2 rounded-lg transition-colors">
-          Exit Class
-        </button>
+        <div className="no-drag flex items-center gap-2">
+          <ThemeToggle compact />
+          <button onClick={() => navigate('/dashboard')} className="bg-[var(--card2)] hover:bg-[var(--border)] text-[var(--text2)] text-sm px-4 py-2 rounded-lg transition-colors">
+            Exit Class
+          </button>
+        </div>
       </header>
 
       {/* Tabs */}
-      <nav className="bg-[#1e293b] border-b border-slate-700/50 px-6 flex gap-1 flex-shrink-0 no-drag">
+      <nav className="bg-[var(--card)] border-b border-[var(--border)] px-6 flex gap-1 flex-shrink-0 no-drag">
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px
-              ${tab === t ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+              ${tab === t ? 'border-indigo-500 text-[var(--accent)]' : 'border-transparent text-[var(--muted)] hover:text-white'}`}>
             {t}
           </button>
         ))}
@@ -323,23 +327,23 @@ export default function Classroom() {
       <div className="flex-1 overflow-hidden relative">
         {tab === 'Board' && (
           slidesPresenting ? (
-            <div className="h-full flex flex-col bg-[#0f172a] border border-slate-700/30 relative">
-              <div className="bg-[#1e293b] border-b border-slate-700/50 px-6 py-3 flex items-center justify-between">
+            <div className="h-full flex flex-col bg-[var(--surface)] border border-[var(--border)] relative">
+              <div className="bg-[var(--card)] border-b border-[var(--border)] px-6 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   <p className="text-sm font-semibold text-white">Live Slide Presentation</p>
                 </div>
                 <div className="flex items-center">
-                  <span className="text-xs text-indigo-400 font-mono font-bold bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded">
+                  <span className="text-xs text-[var(--accent)] font-mono font-bold bg-[var(--accent-soft)] border border-indigo-500/20 px-2.5 py-1 rounded">
                     Slide {slideIndex + 1} of {totalSlides}
                   </span>
                 </div>
               </div>
               <div className="flex-grow bg-black flex items-center justify-center p-4">
                 {currentSlideImage ? (
-                  <img src={currentSlideImage} className="max-w-full max-h-full object-contain shadow-2xl rounded-xl border border-slate-800 animate-fade-in" alt="presentation slide" />
+                  <img src={currentSlideImage} className="max-w-full max-h-full object-contain shadow-2xl rounded-xl border border-[var(--border)] animate-fade-in" alt="presentation slide" />
                 ) : (
-                  <p className="text-slate-400 text-sm">Waiting for slide contents...</p>
+                  <p className="text-[var(--muted)] text-sm">Waiting for slide contents...</p>
                 )}
               </div>
             </div>
@@ -352,7 +356,7 @@ export default function Classroom() {
                 muted
                 className="w-full h-full object-contain"
               />
-              <div className="absolute top-3 left-4 bg-slate-900/80 backdrop-blur border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-indigo-400 flex items-center gap-1.5">
+              <div className="absolute top-3 left-4 bg-[var(--card)]/90 backdrop-blur border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--accent)] flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse"></span>
                 Live Screen Broadcast
               </div>
@@ -410,11 +414,11 @@ function BoardTab({ socket }) {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0f172a] relative">
-      <div className="absolute top-3 left-4 bg-slate-800/80 backdrop-blur border border-slate-700/50 rounded-lg px-3 py-1.5 text-xs text-slate-400">
+    <div className="h-full flex flex-col bg-[var(--board-bg)] relative">
+      <div className="absolute top-3 left-4 bg-[var(--card)]/90 backdrop-blur border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--muted)]">
         🖊️ Real-Time Board Broadcast (Read Only)
       </div>
-      <canvas ref={canvasRef} className="flex-1 w-full bg-[#0f172a]" />
+      <canvas ref={canvasRef} className="flex-1 w-full bg-[var(--board-bg)]" />
     </div>
   )
 }
@@ -431,7 +435,7 @@ function CodeTab({ roomCode, socket, student, room }) {
   const [showAiPanel, setShowAiPanel] = useState(false)
 
   const languages = ['python', 'javascript', 'java', 'c', 'cpp']
-  
+
   const langIDs = {
     'python': 71,
     'javascript': 63,
@@ -465,12 +469,12 @@ function CodeTab({ roomCode, socket, student, room }) {
         })
       })
       const result = await response.json()
-      
+
       let resOutput = ''
       if (result.stdout) resOutput += result.stdout
       if (result.stderr) resOutput += result.stderr
       if (result.compile_output) resOutput += result.compile_output
-      
+
       setOutput(resOutput || 'Execution completed. (No output returned)')
     } catch {
       setOutput('Failed to run code. Make sure you have internet access for the Judge0 compiler.')
@@ -518,17 +522,17 @@ function CodeTab({ roomCode, socket, student, room }) {
     <div className="h-full flex overflow-hidden">
       <div className="flex-1 flex flex-col">
         {/* Toolbar */}
-        <div className="bg-[#1e293b] border-b border-slate-700/50 px-4 py-2.5 flex items-center gap-3">
+        <div className="bg-[var(--card)] border-b border-[var(--border)] px-4 py-2.5 flex items-center gap-3">
           <select value={language} onChange={e => setLanguage(e.target.value)}
-            className="bg-[#0f172a] border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white">
+            className="bg-[var(--surface)] border border-[var(--border2)] rounded-lg px-3 py-1.5 text-sm text-white">
             {languages.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
-          
+
           <button onClick={runCode} disabled={running}
             className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium">
             {running ? 'Running...' : '▶ Run Code'}
           </button>
-          
+
           <button onClick={submitCode} disabled={submitting}
             className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium">
             {submitting ? 'Submitting...' : '📤 Submit Code'}
@@ -546,8 +550,8 @@ function CodeTab({ roomCode, socket, student, room }) {
             className="flex-1 bg-[#0d1117] text-green-400 font-mono text-sm p-5 resize-none focus:outline-none"
             spellCheck={false}
           />
-          <div className="h-40 bg-[#161b22] border-t border-slate-700/60 p-4 font-mono text-sm overflow-y-auto text-slate-300">
-            <div className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Execution Output</div>
+          <div className="h-40 bg-[#161b22] border-t border-slate-700/60 p-4 font-mono text-sm overflow-y-auto text-[#CBD5E1]">
+            <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Execution Output</div>
             <pre className="whitespace-pre-wrap">{output || 'No output yet. Click "Run Code" to compile.'}</pre>
           </div>
         </div>
@@ -555,12 +559,12 @@ function CodeTab({ roomCode, socket, student, room }) {
 
       {/* AI Panel */}
       {showAiPanel && (
-        <div className="w-80 border-l border-slate-700/50 bg-[#1e293b] p-6 flex flex-col gap-4 overflow-y-auto">
+        <div className="w-80 border-l border-[var(--border)] bg-[var(--card)] p-6 flex flex-col gap-4 overflow-y-auto">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-white flex items-center gap-2">🤖 Claude AI Hint</h3>
-            <button onClick={() => setShowAiPanel(false)} className="text-slate-400 hover:text-white">✕</button>
+            <button onClick={() => setShowAiPanel(false)} className="text-[var(--muted)] hover:text-white">✕</button>
           </div>
-          <div className="bg-[#0f172a] rounded-xl p-4 border border-slate-700/60 flex-1 overflow-y-auto text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+          <div className="bg-[var(--surface)] rounded-xl p-4 border border-[var(--border)] flex-1 overflow-y-auto text-sm text-[var(--text2)] whitespace-pre-wrap leading-relaxed">
             {aiHint}
           </div>
         </div>
@@ -588,70 +592,70 @@ function NotesTab({ room, receivedPDFs, handleViewPDF, handleDownloadPDF }) {
 
   function downloadPDF(note) {
     const doc = new jsPDF()
-    
+
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(22)
     doc.setTextColor(99, 102, 241) // Indigo accent
     doc.text('EduSync Class Note', 20, 20)
-    
+
     doc.setFontSize(10)
     doc.setTextColor(100, 116, 139) // Slate subtext
     doc.text(`Subject: ${room?.subject || ''}`, 20, 30)
     doc.text(`Topic: ${room?.topic || ''}`, 20, 36)
     doc.text(`Class: ${room?.class_name || ''}`, 20, 42)
     doc.text(`Date: ${new Date(note.pushed_at).toLocaleString()}`, 20, 48)
-    
+
     doc.setLineWidth(0.5)
     doc.setDrawColor(203, 213, 225)
     doc.line(20, 52, 190, 52)
-    
+
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(15)
     doc.setTextColor(15, 23, 42) // Dark Slate
     doc.text(note.title, 20, 62)
-    
+
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(11)
     doc.setTextColor(51, 65, 85)
     const textLines = doc.splitTextToSize(note.content, 170)
     doc.text(textLines, 20, 72)
-    
+
     doc.save(`Note_${note.title.replace(/\s+/g, '_')}.pdf`)
   }
 
   return (
     <div className="h-full p-6 overflow-y-auto max-w-4xl mx-auto flex flex-col">
       {/* Sub tabs switcher */}
-      <div className="flex border-b border-slate-700/50 mb-6 gap-6">
+      <div className="flex border-b border-[var(--border)] mb-6 gap-6">
         <button onClick={() => setSubTab('notes')}
           className={`pb-3 text-sm font-semibold transition-colors border-b-2 -mb-px px-1
-            ${subTab === 'notes' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+            ${subTab === 'notes' ? 'border-indigo-500 text-[var(--accent)]' : 'border-transparent text-[var(--muted)] hover:text-white'}`}>
           📝 Class Notes ({notes.length})
         </button>
         <button onClick={() => setSubTab('pdfs')}
           className={`pb-3 text-sm font-semibold transition-colors border-b-2 -mb-px px-1
-            ${subTab === 'pdfs' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-white'}`}>
+            ${subTab === 'pdfs' ? 'border-indigo-500 text-[var(--accent)]' : 'border-transparent text-[var(--muted)] hover:text-white'}`}>
           📄 Shared PDFs ({receivedPDFs.length})
         </button>
       </div>
 
       {subTab === 'notes' ? (
         notes.length === 0 ? (
-          <div className="text-center text-slate-500 mt-12 flex-grow">
+          <div className="text-center text-[var(--muted)] mt-12 flex-grow">
             <p className="text-5xl mb-2">📝</p>
-            <p className="font-semibold text-slate-400">No notes pushed yet by the teacher</p>
+            <p className="font-semibold text-[var(--muted)]">No notes pushed yet by the teacher</p>
           </div>
         ) : (
           <div className="space-y-4 flex-grow">
             {notes.map(n => (
-              <div key={n.id} className="bg-[#1e293b] rounded-xl p-5 border border-slate-700/40 flex justify-between items-start">
+              <div key={n.id} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)] flex justify-between items-start">
                 <div className="flex-1 pr-6">
                   <p className="font-bold text-white text-base mb-1">{n.title}</p>
-                  <p className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{n.content}</p>
-                  <p className="text-slate-500 text-xs mt-3">{new Date(n.pushed_at).toLocaleTimeString()}</p>
+                  <p className="text-[var(--text2)] text-sm whitespace-pre-wrap leading-relaxed">{n.content}</p>
+                  <p className="text-[var(--muted)] text-xs mt-3">{new Date(n.pushed_at).toLocaleTimeString()}</p>
                 </div>
                 <button onClick={() => downloadPDF(n)}
-                  className="bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 border border-indigo-500/20 px-4 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
+                  className="bg-[var(--accent-soft)] hover:bg-[var(--accent-soft)] text-[var(--accent)] border border-indigo-500/20 px-4 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
                   📥 Download PDF
                 </button>
               </div>
@@ -660,23 +664,23 @@ function NotesTab({ room, receivedPDFs, handleViewPDF, handleDownloadPDF }) {
         )
       ) : (
         receivedPDFs.length === 0 ? (
-          <div className="text-center text-slate-500 mt-12 flex-grow">
+          <div className="text-center text-[var(--muted)] mt-12 flex-grow">
             <p className="text-5xl mb-2">📄</p>
-            <p className="font-semibold text-slate-400">No PDF files shared by the teacher yet</p>
+            <p className="font-semibold text-[var(--muted)]">No PDF files shared by the teacher yet</p>
           </div>
         ) : (
           <div className="space-y-4 flex-grow">
             {receivedPDFs.map(pdf => (
-              <div key={pdf.id} className="bg-[#1e293b] rounded-xl p-5 border border-slate-700/40 flex justify-between items-center">
+              <div key={pdf.id} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)] flex justify-between items-center">
                 <div className="flex-1 pr-6">
                   <p className="font-bold text-white text-base mb-1">{pdf.filename}</p>
-                  <p className="text-slate-400 text-xs mt-1">
+                  <p className="text-[var(--muted)] text-xs mt-1">
                     Size: {Math.round(pdf.filesize / 1024)} KB · Shared: {new Date(pdf.pushed_at).toLocaleString()}
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => handleViewPDF(pdf)}
-                    className="bg-[#0f172a] hover:bg-slate-800 text-slate-300 border border-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-colors">
+                    className="bg-[var(--surface)] hover:bg-[var(--card2)] text-[var(--text2)] border border-[var(--border)] px-4 py-2 rounded-lg text-xs font-semibold transition-colors">
                     👁️ View PDF
                   </button>
                   <button onClick={() => handleDownloadPDF(pdf)}
@@ -700,7 +704,7 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
   const [timeLeft, setTimeLeft] = useState(0)
   const [submitted, setSubmitted] = useState(false)
   const [result, setResult] = useState(null)
-  
+
   const timerRef = useRef(null)
   const latestRef = useRef({ exam, answers, submitted })
   const initializedExamRef = useRef(null)
@@ -843,22 +847,22 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
   if (submitted && result) {
     return (
       <div className="h-full flex items-center justify-center p-6">
-        <div className="bg-[#1e293b] rounded-2xl p-8 border border-slate-700 max-w-md w-full text-center shadow-2xl">
+        <div className="bg-[var(--card)] rounded-2xl p-8 border border-[var(--border)] max-w-md w-full text-center shadow-2xl">
           <p className="text-5xl mb-3">🎉</p>
           <h3 className="text-xl font-bold text-white mb-2">Exam Submitted!</h3>
-          <p className="text-slate-400 text-sm mb-6">Your answers have been graded by the system.</p>
-          
-          <div className="bg-[#0f172a] rounded-xl p-6 border border-slate-700/60 mb-6 grid grid-cols-2 gap-4">
+          <p className="text-[var(--muted)] text-sm mb-6">Your answers have been graded by the system.</p>
+
+          <div className="bg-[var(--surface)] rounded-xl p-6 border border-[var(--border)] mb-6 grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Score</p>
-              <p className="text-2xl font-bold text-indigo-400">{result.score} / {result.total}</p>
+              <p className="text-xs text-[var(--muted)] font-bold uppercase tracking-wider mb-1">Score</p>
+              <p className="text-2xl font-bold text-[var(--accent)]">{result.score} / {result.total}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Percentage</p>
-              <p className="text-2xl font-bold text-indigo-400">{result.percentage}%</p>
+              <p className="text-xs text-[var(--muted)] font-bold uppercase tracking-wider mb-1">Percentage</p>
+              <p className="text-2xl font-bold text-[var(--accent)]">{result.percentage}%</p>
             </div>
           </div>
-          
+
           <button onClick={() => setExam(null)}
             className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors">
             Close Result View
@@ -870,11 +874,11 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
 
   if (!exam) {
     return (
-      <div className="h-full flex items-center justify-center p-6 text-center text-slate-500">
+      <div className="h-full flex items-center justify-center p-6 text-center text-[var(--muted)]">
         <div>
           <p className="text-5xl mb-3">📝</p>
-          <p className="font-medium text-slate-400">No active exam running right now</p>
-          <p className="text-sm text-slate-500 mt-1">When the teacher launches a test, it will automatically load here.</p>
+          <p className="font-medium text-[var(--muted)]">No active exam running right now</p>
+          <p className="text-sm text-[var(--muted)] mt-1">When the teacher launches a test, it will automatically load here.</p>
         </div>
       </div>
     )
@@ -883,14 +887,14 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
   return (
     <div className="h-full flex flex-col">
       {/* Timer / Header */}
-      <div className="bg-[#1e293b] border-b border-slate-700/50 px-6 py-3 flex items-center justify-between flex-shrink-0">
+      <div className="bg-[var(--card)] border-b border-[var(--border)] px-6 py-3 flex items-center justify-between flex-shrink-0">
         <div>
           <h3 className="font-bold text-white text-base leading-none">{exam.title}</h3>
-          <p className="text-slate-400 text-xs mt-1">{exam.questions?.length || 0} Multiple Choice Questions</p>
+          <p className="text-[var(--muted)] text-xs mt-1">{exam.questions?.length || 0} Multiple Choice Questions</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 font-medium">Time Remaining:</span>
-          <span className="font-mono bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-bold text-sm">
+          <span className="text-xs text-[var(--muted)] font-medium">Time Remaining:</span>
+          <span className="font-mono bg-[var(--red-soft)] text-[var(--red)] border border-[var(--border)] px-3 py-1.5 rounded-lg font-bold text-sm">
             ⏳ {formatTime(timeLeft)}
           </span>
         </div>
@@ -899,16 +903,16 @@ function ExamTab({ roomCode, socket, student, room, launchedExam }) {
       {/* Questions list */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto w-full">
         {exam.questions?.map((q, qi) => (
-          <div key={qi} className="bg-[#1e293b] rounded-xl p-5 border border-slate-700/40">
+          <div key={qi} className="bg-[var(--card)] rounded-xl p-5 border border-[var(--border)]">
             <p className="font-bold text-white text-sm mb-3">Q{qi + 1}. {q.text}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {q.options?.map((opt, oi) => (
                 <button key={oi} onClick={() => selectOption(qi, oi)}
                   className={`text-left p-3.5 rounded-xl border text-sm transition-all
-                    ${answers[qi] === oi 
-                      ? 'bg-indigo-600/20 border-indigo-500 text-white font-medium' 
-                      : 'bg-[#0f172a] border-slate-700/60 text-slate-300 hover:border-slate-600'}`}>
-                  <span className="inline-block w-6 h-6 rounded-lg bg-[#1e293b] text-center leading-6 text-xs text-slate-400 font-bold mr-2.5">
+                    ${answers[qi] === oi
+                      ? 'bg-[var(--accent-soft)] border-indigo-500 text-[var(--text)] font-medium'
+                      : 'bg-[var(--surface)] border-[var(--border)] text-[var(--text2)] hover:border-[var(--border)]'}`}>
+                  <span className="inline-block w-6 h-6 rounded-lg bg-[var(--card)] text-center leading-6 text-xs text-[var(--muted)] font-bold mr-2.5">
                     {String.fromCharCode(65 + oi)}
                   </span>
                   {opt}
