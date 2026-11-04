@@ -7,7 +7,7 @@ LAN classroom platform with Express/Socket.IO backends, SQLite databases, Electr
 | Directory | Application | Development port |
 | --- | --- | --- |
 | `server/` | Main Express API, Socket.IO, and SQLite | 4000 |
-| `nexclass-hod/` | HOD Electron + React portal and its API | 5176 (portal), 3000 (API) |
+| `nexclass-hod/` | HOD Electron + React portal and its API | 5175 (portal), 3000 (API) |
 | `teacher-app/teacher-app/` | Teacher Electron + React app | 5173 |
 | `student-app/` | Student Electron + React app | 5174 |
 | `registration-site/` | Public React university registration website | 5176 |
