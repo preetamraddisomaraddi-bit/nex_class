@@ -1,18 +1,18 @@
 # NexClass (EduSync)
 
-LAN classroom platform with an Express/Socket.IO backend, SQLite database, three Electron desktop apps, and a university registration website.
+LAN classroom platform with Express/Socket.IO backends, SQLite databases, Electron desktop apps, and a university registration website.
 
 ## Structure
 
 | Directory | Application | Development port |
 | --- | --- | --- |
-| `server/` | Express API, Socket.IO and SQLite | 4000 |
+| `server/` | Main Express API, Socket.IO, and SQLite | 4000 |
+| `nexclass-hod/` | HOD Electron + React portal and its API | 5176 (portal), 3000 (API) |
 | `teacher-app/teacher-app/` | Teacher Electron + React app | 5173 |
 | `student-app/` | Student Electron + React app | 5174 |
-| `admin-app/` | University administrator Electron + React app | 5175 |
-| `registration-site/` | Public React registration website | 5176 |
+| `registration-site/` | Public React university registration website | 5176 |
 
-The nested teacher directory is intentional in this checkout; use the full path above.
+The nested teacher directory is intentional in this checkout; use the full path above. The old `admin-app/` has been removed. The HOD portal is a separate app and is kept in `nexclass-hod/`.
 
 ## Requirements
 
@@ -24,9 +24,9 @@ From the repository root, install each application:
 
 ```powershell
 npm ci --prefix server
+npm ci --prefix nexclass-hod
 npm ci --prefix teacher-app/teacher-app
 npm ci --prefix student-app
-npm ci --prefix admin-app
 npm ci --prefix registration-site
 ```
 
@@ -43,14 +43,15 @@ Start each process in a separate terminal:
 
 ```powershell
 npm start --prefix server
+npm run dev --prefix nexclass-hod
 npm run dev --prefix teacher-app/teacher-app
 npm run dev --prefix student-app
-npm run dev --prefix admin-app
+npm run dev --prefix registration-site
 ```
 
-Open `http://localhost:4000/register/` to register a university. In the admin app, connect to `http://localhost:4000`, sign in using the university code and administrator credentials, then create departments/semesters and approve teachers. Teacher/student apps also use port 4000. For other devices, replace localhost with the server's LAN IP and allow inbound TCP port 4000 through Windows Firewall.
+Open `http://localhost:4000/register/` to register a university. Use the HOD portal for department oversight. Teacher/student apps connect to the classroom server; for other devices, replace localhost with the server's LAN IP and allow inbound TCP port 4000 through Windows Firewall.
 
-SQLite is created automatically at `server/db/edusync.db`; no separate database server is needed. Back up this file before applying changes to an existing installation. `DB_PATH` can override its location for testing. Tests use isolated databases and never modify the normal database.
+SQLite for the main server is created automatically at `server/db/edusync.db`; no separate database server is needed. Back up this file before applying changes to an existing installation. `DB_PATH` can override its location for testing. Tests use isolated databases and never modify the normal database.
 
 For registration-site development:
 
@@ -64,12 +65,12 @@ Open `http://localhost:5176/register/`. Vite proxies `/api` to port 4000. For a 
 
 ```powershell
 npm test --prefix server
+npm run build --prefix nexclass-hod
 npm run build --prefix teacher-app/teacher-app
 npm run build --prefix student-app
-npm run build --prefix admin-app
 npm run build --prefix registration-site
 ```
 
-On Windows, run `npm run package --prefix <app-directory>` to build an installer. Teacher/student output goes to `release/`; admin output goes to `dist-electron/`. Installers and interactive desktop behavior still require Windows testing.
+On Windows, run `npm run package --prefix <app-directory>` to build an installer. Teacher/student output goes to `release/`; the HOD portal output goes to `dist-electron/`. Installers and interactive desktop behavior still require Windows testing.
 
 See [PROJECT_REVIEW.md](PROJECT_REVIEW.md) for verified flows, remaining gaps, changes and a Windows test checklist. `COMPLETED_FEATURES.md` is a historical feature log; its completion claims are not a test report.
