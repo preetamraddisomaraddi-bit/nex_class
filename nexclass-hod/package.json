@@ -4,7 +4,7 @@
   "description": "NexClass HOD Portal",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite --port 5176\" \"wait-on http://localhost:5176 && electron .\"",
+    "dev": "concurrently \"vite --port 5175\" \"wait-on http://localhost:5175 && electron .\"",
     "build": "vite build",
     "postinstall": "electron-builder install-app-deps",
     "package": "vite build && electron-builder",
