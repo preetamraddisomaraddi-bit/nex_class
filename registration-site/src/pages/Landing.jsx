@@ -41,10 +41,6 @@ export default function Landing() {
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 py-4 rounded-xl transition-all shadow-lg shadow-indigo-600/20 text-sm flex items-center gap-2">
             Register Your University <span className="text-lg">→</span>
           </button>
-          <a href="/register/admin-app.zip" download
-            className="bg-white hover:bg-slate-50 text-slate-700 font-bold px-8 py-4 rounded-xl transition-all border border-slate-200 text-sm flex items-center justify-center gap-2 shadow-sm">
-            📥 Download Admin App
-          </a>
         </div>
 
         {/* Features Highlight */}
