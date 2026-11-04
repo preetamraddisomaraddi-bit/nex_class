@@ -5,7 +5,7 @@ const { pathToFileURL } = require('url')
 const Store = require('electron-store')
 
 const isDev = !app.isPackaged
-const devUrl = 'http://localhost:5176'
+const devUrl = 'http://localhost:5175'
 const appHtmlPath = path.resolve(__dirname, '../dist/index.html')
 const appFileUrl = pathToFileURL(appHtmlPath).href
 let mainWindow = null
