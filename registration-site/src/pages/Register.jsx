@@ -367,10 +367,6 @@ export default function Register() {
               <p className="text-xs text-red-500 font-semibold uppercase tracking-wider">⚠️ Write down this code! You will need it to login.</p>
 
               <div className="flex flex-col gap-2 pt-6 border-t border-slate-200">
-                <a href="/register/admin-app.zip" download
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-md shadow-indigo-600/10 text-sm flex items-center justify-center gap-1.5">
-                  📥 Download Admin Desktop App
-                </a>
                 <button onClick={() => navigate('/')}
                   className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 rounded-xl transition-all border border-slate-200 text-sm">
                   Return to Home
