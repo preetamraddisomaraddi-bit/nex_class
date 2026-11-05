@@ -1,0 +1,17 @@
+services:
+  nexclass-server:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - nexclass-data:/data
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      PORT: 3000
+      HOST: 0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  nexclass-data:

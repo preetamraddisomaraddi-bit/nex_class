@@ -4,7 +4,7 @@ export const getHODServerURL = async () => {
   const savedUrl = window.localStorage.getItem('nexclass_server_url')
   if (savedUrl) return savedUrl.replace(/\/$/, '')
   const serverInfo = await window.electronAPI?.getServerInfo?.().catch?.(() => null)
-  return `http://localhost:${serverInfo?.port || new URL(DEFAULT_HOD_SERVER_URL).port}`
+  return `${serverInfo?.protocol || 'http'}://localhost:${serverInfo?.port || new URL(DEFAULT_HOD_SERVER_URL).port}`
 }
 
 export async function apiRequest(path, { method = 'GET', body, auth = true } = {}) {
@@ -46,3 +46,4 @@ export const getRooms = () => apiRequest('/rooms')
 export const getRoomDetail = code => apiRequest(`/rooms/${encodeURIComponent(code)}`)
 export const getAttendanceSummary = () => apiRequest('/attendance/summary')
 export const sendAlert = data => apiRequest('/alerts', { method: 'POST', body: data })
+export const getAudit = (limit = 50, offset = 0) => apiRequest(`/audit?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`)

@@ -52,7 +52,7 @@ router.get('/student/:student_id', async (req, res) => {
     const badges = await dbAll('SELECT * FROM badges WHERE student_id = ? ORDER BY awarded_at DESC', [studentId]);
     res.json({ badges });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

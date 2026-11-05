@@ -9,7 +9,7 @@ router.post('/mark', async (req, res) => {
     await dbRun('INSERT OR IGNORE INTO attendance (student_id, room_id, status) VALUES (?, ?, ?)', [student_id, room_id, status || 'present']);
     const record = await dbGet('SELECT * FROM attendance WHERE student_id = ? AND room_id = ?', [student_id, room_id]);
     res.json({ record });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.patch('/update', async (req, res) => {
@@ -17,7 +17,7 @@ router.patch('/update', async (req, res) => {
     const { student_id, room_id, status } = req.body;
     await dbRun('UPDATE attendance SET status = ? WHERE student_id = ? AND room_id = ?', [status, student_id, room_id]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/room/:room_id', async (req, res) => {
@@ -27,7 +27,7 @@ router.get('/room/:room_id', async (req, res) => {
       [req.params.room_id]
     );
     res.json({ records });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/student/:student_id', async (req, res) => {
@@ -41,7 +41,7 @@ router.get('/student/:student_id', async (req, res) => {
     const total = records.length;
     const present = records.filter(r => r.status === 'present').length;
     res.json({ records, total, present, percentage: total ? Math.round((present / total) * 100) : 0 });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 module.exports = router;

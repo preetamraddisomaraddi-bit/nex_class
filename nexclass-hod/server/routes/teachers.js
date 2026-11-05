@@ -1,10 +1,14 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validate, validateIdParam } = require('../middleware/validate')
+const { emptyBody } = require('../validation/schemas')
+const { writeAudit } = require('../db/database')
 const router = express.Router()
 const publicTeacher = (row) => { if (!row) return row; const { password_hash, ...safe } = row; return safe }
 
 router.use(requireAuth)
+router.param('id', validateIdParam('id'))
 router.get('/', requireRole('hod'), (_req, res) => {
   const teachers = dbAll(`SELECT t.id, t.name, t.employee_id, t.email, t.subject,
     t.semester, t.status, t.created_at,
@@ -31,19 +35,22 @@ router.get('/:id', (req, res) => {
   res.json({ ...publicTeacher(teacher), sessions, exams })
 })
 
-router.patch('/:id/approve', requireRole('hod'), (req, res) => {
+router.patch('/:id/approve', requireRole('hod'), validate(emptyBody), (req, res) => {
   const result = dbRun("UPDATE teachers SET status='approved' WHERE id=?", [Number(req.params.id)])
   if (!result.changes) return res.status(404).json({ error: 'Teacher not found' })
+  writeAudit({ role: 'hod', actorId: req.user.id, action: 'teacher_approve', target: `teacher:${req.params.id}`, ip: req.ip })
   res.json({ message: 'Teacher approved', teacher: publicTeacher(dbGet('SELECT * FROM teachers WHERE id=?', [Number(req.params.id)])) })
 })
-router.patch('/:id/reject', requireRole('hod'), (req, res) => {
+router.patch('/:id/reject', requireRole('hod'), validate(emptyBody), (req, res) => {
   const result = dbRun("UPDATE teachers SET status='rejected' WHERE id=?", [Number(req.params.id)])
   if (!result.changes) return res.status(404).json({ error: 'Teacher not found' })
+  writeAudit({ role: 'hod', actorId: req.user.id, action: 'teacher_reject', target: `teacher:${req.params.id}`, ip: req.ip })
   res.json({ message: 'Teacher rejected' })
 })
-router.delete('/:id', requireRole('hod'), (req, res) => {
+router.delete('/:id', requireRole('hod'), validate(emptyBody), (req, res) => {
   const result = dbRun('DELETE FROM teachers WHERE id=?', [Number(req.params.id)])
   if (!result.changes) return res.status(404).json({ error: 'Teacher not found' })
+  writeAudit({ role: 'hod', actorId: req.user.id, action: 'teacher_delete', target: `teacher:${req.params.id}`, ip: req.ip })
   res.json({ message: 'Teacher removed' })
 })
 module.exports = router

@@ -2,14 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import jsPDF from 'jspdf'
 import { getTeachers, getStudents, getRooms, getStudentProfile } from '../api'
 import { useToast } from '../components/AlertToast'
-
-const toCSV = (headers, rows) => {
-  const escape = value => {
-    const text = String(value ?? '')
-    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-  }
-  return [headers.map(escape).join(','), ...rows.map(row => headers.map(header => escape(row[header])).join(','))].join('\r\n')
-}
+import { toCSV } from '../utils/csv'
 
 const formatDate = (date, options) => new Date(date).toLocaleDateString('en-IN', options)
 const reportDate = () => new Date().toISOString().slice(0, 10)

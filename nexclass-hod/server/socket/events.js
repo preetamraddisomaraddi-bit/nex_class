@@ -1,4 +1,10 @@
 const { dbGet, dbAll, dbRun } = require('../db/database')
+const { logger } = require('../logging')
+
+function byteLength(value) {
+  try { return Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value ?? null), 'utf8') }
+  catch { return Infinity }
+}
 
 module.exports = function registerEvents(io) {
   const onlineTeachers = new Map()
@@ -15,6 +21,22 @@ module.exports = function registerEvents(io) {
   io.on('connection', socket => {
     const identity = socket.data.user
     console.log(`[Socket] Connected: ${socket.id} (${identity.role})`)
+    const buckets = { board: { tokens: 60, updatedAt: Date.now() }, other: { tokens: 10, updatedAt: Date.now() } }
+    const originalOn = socket.on.bind(socket)
+    socket.on = (event, listener) => originalOn(event, (...args) => {
+      if (event === 'disconnect' || event === 'error') return listener(...args)
+      const bucket = event === 'board:draw' ? buckets.board : buckets.other
+      const limit = event === 'board:draw' ? 60 : 10
+      const now = Date.now()
+      bucket.tokens = Math.min(limit, bucket.tokens + ((now - bucket.updatedAt) * limit / 1000))
+      bucket.updatedAt = now
+      if (bucket.tokens < 1) {
+        logger.warn({ socket_id: socket.id, event }, 'Socket rate limit exceeded; event dropped')
+        return
+      }
+      bucket.tokens -= 1
+      listener(...args)
+    })
 
     socket.on('hod:connect', () => {
       if (identity.role !== 'hod') return
@@ -123,7 +145,8 @@ module.exports = function registerEvents(io) {
       const code = String(room_code || '').toUpperCase()
       const room = roomForTeacher(code, identity.id)
       if (!room || typeof content !== 'string' || !content.trim()) return
-      const text = content.trim().slice(0, 20000)
+      if (byteLength(content) > 5 * 1024) { logger.warn({ socket_id: socket.id, event: 'note:pushed' }, 'Oversized socket payload dropped'); return }
+      const text = content.trim()
       const result = dbRun('INSERT INTO notes(room_id,content) VALUES(?,?)', [room.id, text])
       const payload = { id: result.lastInsertRowid, room_code: code, content: text, teacher_id: identity.id, pushed_at: new Date().toISOString() }
       io.to(`room:${code}`).emit('note:received', payload)
@@ -134,7 +157,9 @@ module.exports = function registerEvents(io) {
       if (identity.role !== 'teacher') return
       const code = String(data.room_code || '').toUpperCase()
       if (!roomForTeacher(code, identity.id)) return
-      socket.to(`room:${code}`).emit('code:received', { code: String(data.code || '').slice(0, 50000), language: String(data.language || '').slice(0, 50), room_code: code, teacher_id: identity.id })
+      const codeText = String(data.code || '')
+      if (byteLength(codeText) > 100 * 1024) { logger.warn({ socket_id: socket.id, event: 'code:broadcast' }, 'Oversized socket payload dropped'); return }
+      socket.to(`room:${code}`).emit('code:received', { code: codeText, language: String(data.language || '').slice(0, 50), room_code: code, teacher_id: identity.id })
     })
 
     socket.on('exam:launched', (data = {}) => {
@@ -166,7 +191,8 @@ module.exports = function registerEvents(io) {
       const code = String(data.room_code || '').toUpperCase()
       const room = dbGet("SELECT * FROM rooms WHERE code=? AND status='active' AND semester=(SELECT semester FROM students WHERE id=?)", [code, identity.id])
       if (!room || typeof data.code !== 'string') return
-      const codeText = data.code.slice(0, 50000)
+      if (byteLength(data.code) > 100 * 1024 || byteLength(data.output || '') > 100 * 1024) { logger.warn({ socket_id: socket.id, event: 'code:submitted' }, 'Oversized socket payload dropped'); return }
+      const codeText = data.code
       const language = String(data.language || '').slice(0, 50)
       const output = String(data.output || '').slice(0, 50000)
       const result = dbRun('INSERT INTO code_submissions(student_id,room_id,code,language,output) VALUES(?,?,?,?,?)', [identity.id, room.id, codeText, language, output])
@@ -214,7 +240,10 @@ module.exports = function registerEvents(io) {
       if (!roomForTeacher(code, identity.id)) return
       callback(code)
     }
-    socket.on('board:draw', data => withOwnedRoom(data, code => socket.to(`room:${code}`).emit('board:draw', { drawData: data.drawData })))
+    socket.on('board:draw', data => {
+      if (byteLength(data?.drawData) > 100 * 1024) { logger.warn({ socket_id: socket.id, event: 'board:draw' }, 'Oversized socket payload dropped'); return }
+      withOwnedRoom(data, code => socket.to(`room:${code}`).emit('board:draw', { drawData: data.drawData }))
+    })
     socket.on('board:clear', data => withOwnedRoom(data, code => io.to(`room:${code}`).emit('board:clear')))
     socket.on('screen:start', data => withOwnedRoom(data, code => {
       screenShares.set(code, socket.id)

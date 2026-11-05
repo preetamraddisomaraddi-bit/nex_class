@@ -24,14 +24,14 @@ router.post('/create', async (req, res) => {
     );
     const room = await dbGet('SELECT * FROM rooms WHERE id = ?', [result.lastID]);
     res.json({ room });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/teacher/:teacher_id', async (req, res) => {
   try {
     const rooms = await dbAll('SELECT * FROM rooms WHERE teacher_id = ? ORDER BY started_at DESC', [req.params.teacher_id]);
     res.json({ rooms });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/:code/students', async (req, res) => {
@@ -44,7 +44,7 @@ router.get('/:code/students', async (req, res) => {
       [room.id]
     );
     res.json({ students });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/:code', async (req, res) => {
@@ -92,14 +92,14 @@ router.get('/:code', async (req, res) => {
     }
 
     res.json({ room });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.patch('/:code/end', async (req, res) => {
   try {
     await dbRun("UPDATE rooms SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE code = ?", [req.params.code.toUpperCase()]);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 module.exports = router;

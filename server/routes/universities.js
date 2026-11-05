@@ -49,7 +49,7 @@ router.post('/register', async (req, res) => {
       message: 'University registered successfully'
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -60,7 +60,7 @@ router.get('/code/:code', async (req, res) => {
     if (!uni) return res.status(404).json({ error: 'University not found' });
     res.json({ university: uni });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -96,7 +96,7 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -144,7 +144,7 @@ router.get('/:id/stats', verifyAdmin, async (req, res) => {
       university_avg_score
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -175,7 +175,7 @@ router.get('/:id/teachers', verifyAdmin, async (req, res) => {
     const teachers = await dbAll(sql, params);
     res.json({ teachers });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -221,7 +221,7 @@ router.get('/:id/students', verifyAdmin, async (req, res) => {
     const students = await dbAll(outerSql, params);
     res.json({ students });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -275,7 +275,7 @@ router.get('/:id/sessions', verifyAdmin, async (req, res) => {
     const sessions = await dbAll(sql, params);
     res.json({ sessions });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -296,7 +296,7 @@ router.get('/:id/recent-sessions', verifyAdmin, async (req, res) => {
     );
     res.json({ sessions });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -325,7 +325,7 @@ router.get('/:id/alerts', verifyAdmin, async (req, res) => {
       low_attendance_students
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -389,7 +389,7 @@ router.get('/:id/reports/attendance', verifyAdmin, async (req, res) => {
       low_attendance_students
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -447,7 +447,7 @@ router.get('/:id/reports/performance', verifyAdmin, async (req, res) => {
       sem_scores
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -468,7 +468,7 @@ router.get('/:id/reports/teachers', verifyAdmin, async (req, res) => {
     );
     res.json({ teachers });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -498,7 +498,7 @@ router.get('/:id/reports/sessions', verifyAdmin, async (req, res) => {
       avg_duration_mins: durationRow.avg_duration || 0
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -539,7 +539,7 @@ router.get('/:id/export/students', verifyAdmin, async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=students_export.csv');
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -583,7 +583,7 @@ router.get('/:id/export/attendance', verifyAdmin, async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=attendance_export.csv');
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -611,7 +611,7 @@ router.get('/:id/export/exams', verifyAdmin, async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename=exams_export.csv');
     res.send(csv);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

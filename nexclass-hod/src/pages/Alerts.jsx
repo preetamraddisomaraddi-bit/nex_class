@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
-import { getStudents, getRooms, sendAlert as saveAlert } from '../api'
+import { getStudents, getRooms, sendAlert as saveAlert, getAudit } from '../api'
 import { useToast } from '../components/AlertToast'
 import { useHOD } from '../context/HODContext'
 
@@ -62,6 +62,9 @@ export default function Alerts() {
   const [alertMessage, setAlertMessage] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [historyFilter, setHistoryFilter] = useState('all')
+  const [historyTab, setHistoryTab] = useState('alerts')
+  const [auditRows, setAuditRows] = useState([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const approvedTeachers = teachers.filter(t => t.status === 'approved')
   useEffect(() => {
@@ -76,6 +79,17 @@ export default function Alerts() {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [showToast])
+
+  useEffect(() => {
+    if (historyTab !== 'audit') return undefined
+    let active = true
+    setAuditLoading(true)
+    getAudit(50, 0)
+      .then(result => { if (active) setAuditRows(Array.isArray(result.rows) ? result.rows : []) })
+      .catch(error => { if (active) showToast(error.message || 'Failed to load audit log.', 'error') })
+      .finally(() => { if (active) setAuditLoading(false) })
+    return () => { active = false }
+  }, [historyTab, showToast])
 
   const studentsWithAttendance = useMemo(() => students.map(student => {
     const sessions = rooms.filter(room => Number(room.semester) === Number(student.semester)).length
@@ -272,8 +286,10 @@ export default function Alerts() {
 
           <section style={cardStyle}>
             <div className="alerts-history-header" style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <h2 style={{ margin: 0, fontFamily: '"Plus Jakarta Sans", sans-serif', fontSize: 14, fontWeight: 700 }}>📋 Alert History</h2>
-              <div className="alerts-history-filters" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div role="tablist" aria-label="Alert records" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {['alerts', 'audit'].map(tab => <button key={tab} type="button" role="tab" aria-selected={historyTab === tab} onClick={() => setHistoryTab(tab)} style={{ ...baseButton, padding: '6px 10px', fontSize: 12, fontWeight: 700, borderColor: historyTab === tab ? 'var(--indigo)' : 'var(--border)', background: historyTab === tab ? 'var(--indigo-light)' : 'transparent', color: historyTab === tab ? 'var(--indigo)' : 'var(--muted)' }}>{tab === 'alerts' ? '📋 Alert History' : '🛡️ Audit Log'}</button>)}
+              </div>
+              {historyTab === 'alerts' && <div className="alerts-history-filters" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {['all', 'reminder', 'warning', 'urgent'].map(filter => {
                   const active = historyFilter === filter
                   const config = typeStyles[filter]
@@ -281,9 +297,25 @@ export default function Alerts() {
                   const activeBg = filter === 'all' ? 'var(--indigo-light)' : config.bg
                   return <button key={filter} type="button" aria-pressed={active} onClick={() => setHistoryFilter(filter)} style={{ ...baseButton, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, borderColor: active ? activeColor : 'var(--border)', background: active ? activeBg : 'transparent', color: active ? activeColor : 'var(--muted)' }}>{filter === 'all' ? 'All' : config.label}</button>
                 })}
-              </div>
+              </div>}
             </div>
-            {filteredHistory.length === 0 ? (
+            {historyTab === 'audit' ? (auditLoading ? (
+              <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>Loading audit log...</div>
+            ) : auditRows.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>No audit events recorded yet.</div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead style={{ background: 'var(--bg)' }}><tr>{['TIME', 'WHO', 'ACTION', 'TARGET'].map(label => <th key={label} style={{ padding: '10px 14px', fontSize: 10, color: 'var(--muted)', letterSpacing: '.05em', borderBottom: '1px solid var(--border)' }}>{label}</th>)}</tr></thead>
+                  <tbody>{auditRows.map(row => <tr key={row.id}>
+                    <td style={{ padding: '11px 14px', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{new Date(`${String(row.created_at).replace(' ', 'T')}Z`).toLocaleString('en-IN')}</td>
+                    <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--text2)', borderBottom: '1px solid var(--border)' }}>{row.actor_role}{row.actor_id ? ` #${row.actor_id}` : ''}</td>
+                    <td style={{ padding: '11px 14px', fontSize: 12, fontWeight: 600, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>{row.action.replaceAll('_', ' ')}</td>
+                    <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>{row.target || '—'}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+            )) : filteredHistory.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>{hasHistoryFilter ? '📭 No alerts match this filter' : '📭 No alerts sent yet'}</div>
             ) : filteredHistory.map((alert, index) => {
               const config = typeStyles[alert.type] || typeStyles.reminder

@@ -20,7 +20,7 @@ router.post('/', verifyAdmin, async (req, res) => {
     const dept = await dbGet('SELECT * FROM departments WHERE id = ?', [result.lastID]);
     res.status(201).json({ success: true, department: dept });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -37,7 +37,7 @@ router.get('/university/:university_id', async (req, res) => {
     );
     res.json({ departments: depts });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -56,7 +56,7 @@ router.put('/:id', verifyAdmin, async (req, res) => {
     const updated = await dbGet('SELECT * FROM departments WHERE id = ?', [req.params.id]);
     res.json({ success: true, department: updated });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -80,7 +80,7 @@ router.delete('/:id', verifyAdmin, async (req, res) => {
     await dbRun('DELETE FROM departments WHERE id = ?', [deptId]);
     res.json({ success: true, message: 'Department deleted successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

@@ -1,10 +1,13 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validate, validateIdParam } = require('../middleware/validate')
+const { attendanceMark } = require('../validation/schemas')
 const router = express.Router()
 router.use(requireAuth)
+router.param('id', validateIdParam('id'))
 
-router.post('/', requireRole('student'), (req, res) => {
+router.post('/', requireRole('student'), validate(attendanceMark), (req, res) => {
   if (req.body?.student_id != null && Number(req.body.student_id) !== req.user.id) return res.status(403).json({ error: 'Students can only mark their own attendance' })
   const { room_id, status = 'present' } = req.body || {}
   const room = dbGet("SELECT * FROM rooms WHERE id=? AND status='active'", [Number(room_id)])

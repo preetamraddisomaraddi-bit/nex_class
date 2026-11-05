@@ -47,7 +47,7 @@ router.post('/teacher/register', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -82,7 +82,7 @@ router.post('/teacher/login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -145,7 +145,7 @@ router.post('/student/register', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -186,7 +186,7 @@ router.post('/student/login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -196,7 +196,7 @@ router.post('/teacher/approve/:id', verifyAdmin, async (req, res) => {
     await dbRun("UPDATE teachers SET status = 'approved' WHERE id = ?", [req.params.id]);
     res.json({ success: true, message: 'Teacher approved successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -205,7 +205,7 @@ router.post('/teacher/reject/:id', verifyAdmin, async (req, res) => {
     await dbRun("UPDATE teachers SET status = 'rejected' WHERE id = ?", [req.params.id]);
     res.json({ success: true, message: 'Teacher registration rejected' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

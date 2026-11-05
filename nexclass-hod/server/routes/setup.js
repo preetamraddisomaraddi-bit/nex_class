@@ -1,8 +1,10 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
-const { db, dbGet } = require('../db/database')
+const { db, dbGet, writeAudit } = require('../db/database')
 const { JWT_SECRET, JWT_EXPIRES } = require('../config')
+const { validate } = require('../middleware/validate')
+const { hodSetup } = require('../validation/schemas')
 
 const router = express.Router()
 const departmentCode = department => String(department).trim().split(/\s+/).filter(Boolean).map(word => word[0]).join('').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'DEPT'
@@ -12,7 +14,7 @@ router.get('/hod', (_req, res) => {
   res.json({ setupRequired: !dbGet('SELECT id FROM hod LIMIT 1') })
 })
 
-router.post('/hod', (req, res) => {
+router.post('/hod', validate(hodSetup), (req, res) => {
   const { name, employee_id, email, department, password, confirm_password } = req.body || {}
   if (![name, employee_id, email, department, password, confirm_password].every(value => String(value || '').trim())) {
     return res.status(400).json({ error: 'All setup fields are required' })
@@ -44,6 +46,7 @@ router.post('/hod', (req, res) => {
 
     if (!createHod) return res.status(409).json({ error: 'Department setup has already been completed' })
     const hod = dbGet('SELECT * FROM hod WHERE id=1')
+    writeAudit({ role: 'hod', actorId: hod.id, action: 'hod_setup', target: `hod:${hod.id}`, ip: req.ip })
     const { password_hash, ...profile } = hod
     const token = jwt.sign({ id: hod.id, role: 'hod', employee_id: hod.employee_id, auth_version: hod.auth_version }, JWT_SECRET, { expiresIn: JWT_EXPIRES })
     return res.status(201).json({ token, hod: profile })

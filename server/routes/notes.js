@@ -9,14 +9,14 @@ router.post('/push', async (req, res) => {
     const result = await dbRun('INSERT INTO notes (room_id, title, content) VALUES (?, ?, ?)', [room_id, title || 'Class Note', content]);
     const note = await dbGet('SELECT * FROM notes WHERE id = ?', [result.lastID]);
     res.json({ note });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/room/:room_id', async (req, res) => {
   try {
     const notes = await dbAll('SELECT * FROM notes WHERE room_id = ? ORDER BY pushed_at ASC', [req.params.room_id]);
     res.json({ notes });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/student/:student_id', async (req, res) => {
@@ -29,7 +29,7 @@ router.get('/student/:student_id', async (req, res) => {
       [req.params.student_id]
     );
     res.json({ notes });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 module.exports = router;

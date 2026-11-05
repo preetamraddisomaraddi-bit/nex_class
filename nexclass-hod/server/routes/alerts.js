@@ -1,11 +1,15 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validate, validateIdParam } = require('../middleware/validate')
+const { alertCreate } = require('../validation/schemas')
+const { writeAudit } = require('../db/database')
 
 const router = express.Router()
 router.use(requireAuth)
+router.param('id', validateIdParam('id'))
 
-router.post('/', requireRole('hod'), (req, res) => {
+router.post('/', requireRole('hod'), validate(alertCreate), (req, res) => {
   const teacherId = Number(req.body?.teacher_id)
   const message = String(req.body?.message || '').trim().slice(0, 2000)
   const type = ['reminder', 'warning', 'urgent'].includes(req.body?.type)
@@ -20,6 +24,7 @@ router.post('/', requireRole('hod'), (req, res) => {
 
   const result = dbRun('INSERT INTO alerts (teacher_id, message, type) VALUES (?, ?, ?)', [teacherId, message, type])
   const alert = dbGet('SELECT id, teacher_id, message, type, sent_at FROM alerts WHERE id=?', [result.lastInsertRowid])
+  writeAudit({ role: 'hod', actorId: req.user.id, action: 'alert_sent', target: `teacher:${teacherId}`, ip: req.ip })
   return res.status(201).json(alert)
 })
 

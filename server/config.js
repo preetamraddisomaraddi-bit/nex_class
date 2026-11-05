@@ -39,4 +39,5 @@ module.exports = {
   // Keep compatibility with older university-admin sessions configured by deployments.
   JWT_SECRET_ADMIN: process.env.JWT_SECRET_ADMIN || JWT_SECRET,
   DB_PATH: process.env.DB_PATH || path.join(__dirname, 'db', 'edusync.db'),
+  userDataPath,
 }

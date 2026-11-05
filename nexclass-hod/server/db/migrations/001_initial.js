@@ -1,0 +1,93 @@
+module.exports.up = db => db.exec(`
+  CREATE TABLE IF NOT EXISTS hod (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    employee_id TEXT UNIQUE NOT NULL,
+    department TEXT NOT NULL,
+    department_code TEXT NOT NULL,
+    university TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    auth_version INTEGER NOT NULL DEFAULT 1,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS teachers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    employee_id TEXT UNIQUE NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    subject TEXT DEFAULT '', semester INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until DATETIME,
+    total_classes INTEGER NOT NULL DEFAULT 0,
+    last_active DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL, usn TEXT UNIQUE NOT NULL,
+    email TEXT DEFAULT '', password_hash TEXT NOT NULL,
+    semester INTEGER, failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS rooms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL, subject TEXT NOT NULL,
+    teacher_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+    semester INTEGER, status TEXT NOT NULL DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP, ended_at DATETIME
+  );
+  CREATE TABLE IF NOT EXISTS attendance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'present',
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, room_id)
+  );
+  CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    content TEXT NOT NULL, pushed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS exams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    title TEXT NOT NULL, duration_mins INTEGER NOT NULL DEFAULT 30,
+    questions_json TEXT DEFAULT '[]', launched_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS exam_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    score INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 100,
+    answers_json TEXT DEFAULT '[]', submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(student_id, exam_id)
+  );
+  CREATE TABLE IF NOT EXISTS code_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    room_id INTEGER REFERENCES rooms(id) ON DELETE CASCADE,
+    code TEXT DEFAULT '', language TEXT DEFAULT '', output TEXT DEFAULT '',
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER REFERENCES teachers(id) ON DELETE CASCADE,
+    message TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'reminder',
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_role TEXT NOT NULL,
+    actor_id INTEGER,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`)

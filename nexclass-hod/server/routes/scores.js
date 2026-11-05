@@ -1,10 +1,13 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validate, validateIdParam } = require('../middleware/validate')
+const { examSubmit } = require('../validation/schemas')
 const router = express.Router()
 router.use(requireAuth)
+router.param('id', validateIdParam('id'))
 
-router.post('/', requireRole('student'), (req, res) => {
+router.post('/', requireRole('student'), validate(examSubmit), (req, res) => {
   if (req.body?.student_id != null && Number(req.body.student_id) !== req.user.id) return res.status(403).json({ error: 'Students can only submit their own scores' })
   const { exam_id, score, total = 100, answers_json = [] } = req.body || {}
   const exam = dbGet(`SELECT e.id,e.room_id,r.semester,r.status FROM exams e JOIN rooms r ON r.id=e.room_id WHERE e.id=?`, [Number(exam_id)])

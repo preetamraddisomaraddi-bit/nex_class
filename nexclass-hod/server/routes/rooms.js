@@ -2,8 +2,12 @@ const express = require('express')
 const crypto = require('crypto')
 const { dbGet, dbAll, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validate, validateCodeParam } = require('../middleware/validate')
+const { roomCreate, emptyBody } = require('../validation/schemas')
+const { writeAudit } = require('../db/database')
 const router = express.Router()
 router.use(requireAuth)
+router.param('code', validateCodeParam('code'))
 
 router.get('/', requireRole('hod', 'teacher'), (req, res) => {
   const where = req.user.role === 'teacher' ? 'WHERE r.teacher_id=?' : ''
@@ -46,7 +50,7 @@ router.get('/:code', (req, res) => {
   res.json({ ...room, attendance, notes, exams })
 })
 
-router.post('/', requireRole('teacher'), (req, res) => {
+router.post('/', requireRole('teacher'), validate(roomCreate), (req, res) => {
   const { subject, semester } = req.body || {}
   if (!subject || !Number.isInteger(Number(semester))) return res.status(400).json({ error: 'Subject and semester are required' })
   const teacher = dbGet('SELECT status, semester FROM teachers WHERE id=?', [req.user.id])
@@ -55,14 +59,17 @@ router.post('/', requireRole('teacher'), (req, res) => {
   let code
   do { code = crypto.randomBytes(4).toString('hex').slice(0, 6).toUpperCase() } while (dbGet('SELECT id FROM rooms WHERE code=?', [code]))
   const result = dbRun('INSERT INTO rooms (code,subject,teacher_id,semester) VALUES (?,?,?,?)', [code, String(subject).trim(), req.user.id, Number(semester)])
-  res.status(201).json(dbGet('SELECT * FROM rooms WHERE id=?', [result.lastInsertRowid]))
+  const created = dbGet('SELECT * FROM rooms WHERE id=?', [result.lastInsertRowid])
+  writeAudit({ role: 'teacher', actorId: req.user.id, action: 'session_create', target: `room:${created.code}`, ip: req.ip })
+  res.status(201).json(created)
 })
 
-router.patch('/:code/end', requireRole('teacher'), (req, res) => {
+router.patch('/:code/end', requireRole('teacher'), validate(emptyBody), (req, res) => {
   const room = dbGet('SELECT * FROM rooms WHERE code=?', [String(req.params.code).toUpperCase()])
   if (!room) return res.status(404).json({ error: 'Room not found' })
   if (room.teacher_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
   dbRun("UPDATE rooms SET status='completed', ended_at=CURRENT_TIMESTAMP WHERE id=?", [room.id])
+  writeAudit({ role: 'teacher', actorId: req.user.id, action: 'session_end', target: `room:${room.code}`, ip: req.ip })
   res.json({ message: 'Session ended' })
 })
 module.exports = router

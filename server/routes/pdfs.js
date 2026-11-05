@@ -45,7 +45,7 @@ router.post('/push', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -58,7 +58,7 @@ router.get('/room/:room_id', async (req, res) => {
     );
     res.json({ pdfs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -77,7 +77,7 @@ router.get('/student/:student_id', async (req, res) => {
     );
     res.json({ pdfs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -92,7 +92,7 @@ router.get('/:id/download', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${row.filename}"`);
     res.send(row.filedata);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

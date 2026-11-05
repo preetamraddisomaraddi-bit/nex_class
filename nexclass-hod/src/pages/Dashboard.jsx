@@ -5,6 +5,7 @@ import StatCard from '../components/StatCard'
 import { useHOD } from '../context/HODContext'
 import { apiRequest } from '../api'
 import { MONTHLY_STATS } from '../data/mockData'
+import { useServerStatus } from '../hooks/useServerStatus'
 
 const headingFont = '"Plus Jakarta Sans", sans-serif'
 const panelStyle = {
@@ -40,6 +41,7 @@ const dateLabel = value => value
   : 'Date unavailable'
 
 export default function Dashboard() {
+  const server = useServerStatus()
   const navigate = useNavigate()
   const showToast = useToast()
   const { teachers, approveTeacher, rejectTeacher, realtime, refreshTeachers } = useHOD()
@@ -168,6 +170,9 @@ export default function Dashboard() {
         <div className="dashboard-date" style={{ flexShrink: 0, textAlign: 'right' }}>
           <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 13, color: 'var(--muted)' }}>{currentDate}</div>
           <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted2)' }}>Live department overview</div>
+          <div title={server.address} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 7, padding: '4px 8px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 10, maxWidth: 310 }}>
+            <span style={{ whiteSpace: 'nowrap' }}>Students connect at:</span><span style={{ fontFamily: '"JetBrains Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server.address}</span>
+          </div>
         </div>
       </section>
 

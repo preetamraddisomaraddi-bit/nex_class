@@ -49,6 +49,17 @@ function AuthGate() {
     window.addEventListener('nexclass-auth-change', updateAuthentication)
 
     const checkAuth = async () => {
+      if (window.electronAPI?.getServerInfo) {
+        while (active) {
+          try {
+            const info = await window.electronAPI.getServerInfo()
+            if (info?.port) break
+          } catch { /* Keep the loading screen visible until the child is ready. */ }
+          await new Promise(resolve => window.setTimeout(resolve, 150))
+        }
+        if (!active) return
+      }
+
       let electronToken = null
       try {
         electronToken = await window.electronAPI?.getToken?.()

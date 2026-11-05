@@ -1,10 +1,12 @@
 const express = require('express')
 const { dbGet, dbAll } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
+const { validateIdParam } = require('../middleware/validate')
 const router = express.Router()
 const publicStudent = (row) => { if (!row) return row; const { password_hash, ...safe } = row; return safe }
 
 router.use(requireAuth)
+router.param('id', validateIdParam('id'))
 router.get('/', requireRole('hod', 'teacher'), (req, res) => {
   const params = []
   let where = ''

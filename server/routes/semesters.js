@@ -19,7 +19,7 @@ router.post('/', verifyAdmin, async (req, res) => {
     const sem = await dbGet('SELECT * FROM semesters WHERE id = ?', [result.lastID]);
     res.status(201).json({ success: true, semester: sem });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -35,7 +35,7 @@ router.get('/department/:dept_id', async (req, res) => {
     );
     res.json({ semesters: sems });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -49,7 +49,7 @@ router.get('/:id/students', async (req, res) => {
     );
     res.json({ students });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 
@@ -73,7 +73,7 @@ router.post('/:id/assign-teacher', verifyAdmin, async (req, res) => {
 
     res.status(201).json({ success: true, message: 'Teacher assigned successfully' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' }));
   }
 });
 

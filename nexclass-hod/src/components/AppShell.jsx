@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useToast } from './AlertToast'
 import { useHOD } from '../context/HODContext'
 import { apiRequest } from '../api'
+import { useServerStatus } from '../hooks/useServerStatus'
 
 const items = [
   { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
@@ -36,6 +37,7 @@ export default function AppShell({ children }) {
   const navigate = useNavigate()
   const showToast = useToast()
   const { pendingCount } = useHOD()
+  const server = useServerStatus()
   const [loggingOut, setLoggingOut] = useState(false)
   const [hodProfile, setHodProfile] = useState(() => {
     try { return JSON.parse(window.localStorage.getItem('nexclass_hod_data') || '{}') } catch { return {} }
@@ -87,6 +89,10 @@ export default function AppShell({ children }) {
       showToast(error.message || 'Unable to change password.', 'error')
     }
   }
+  async function copyServerAddress() {
+    try { await navigator.clipboard.writeText(server.address); showToast('Server address copied', 'success') }
+    catch { showToast('Unable to copy the server address.', 'error') }
+  }
   const hodName = hodProfile.name || 'Head of Department'
   const hodInitials = String(hodName).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('') || 'H'
   const departmentName = hodProfile.department || 'Department'
@@ -117,6 +123,11 @@ export default function AppShell({ children }) {
             <button type="button" title="Logout" aria-label="Logout" disabled={loggingOut} onClick={logout} style={{ background: 'transparent', border: 'none', cursor: loggingOut ? 'wait' : 'pointer', fontSize: 16, color: 'var(--muted)', padding: 4 }}>→</button>
           </div>
           <button type="button" onClick={changePassword} style={{ alignSelf: 'flex-start', background: 'transparent', border: 0, padding: '8px 0 0 44px', color: 'var(--indigo)', fontSize: 11, cursor: 'pointer' }}>Change password</button>
+          <div title={server.address} style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 10, minWidth: 0 }}>
+            <span aria-label={server.online ? 'Server online' : 'Server offline'} style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: server.online ? 'var(--green)' : 'var(--red)' }} />
+            <span style={{ color: 'var(--muted)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{server.address}</span>
+            <button type="button" onClick={copyServerAddress} title="Copy server address" aria-label="Copy server address" style={{ border: 0, background: 'transparent', color: 'var(--indigo)', fontSize: 10, padding: 2, cursor: 'pointer' }}>Copy</button>
+          </div>
           <div style={{ fontSize: 10, color: 'var(--muted2)', textAlign: 'center', marginTop: 8 }}>v1.0.0</div>
         </div>
       </aside>

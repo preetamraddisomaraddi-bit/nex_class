@@ -17,7 +17,7 @@ router.post('/submit', verifyStudent, async (req, res) => {
     const submission = await dbGet('SELECT cs.*, s.name, s.roll_no, s.usn, s.avatar_color FROM code_submissions cs JOIN students s ON s.id = cs.student_id WHERE cs.id = ?', [result.lastID]);
     req.app.get('io')?.to(room.room_code.toUpperCase()).emit('code:submission', { ...submission, room_code: room.room_code });
     res.status(201).json({ id: result.lastID, success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/room/:room_id', verifyTeacher, async (req, res) => {
@@ -28,7 +28,7 @@ router.get('/room/:room_id', verifyTeacher, async (req, res) => {
       `SELECT cs.*, s.name, s.roll_no, s.usn, s.avatar_color FROM code_submissions cs JOIN students s ON cs.student_id = s.id
        WHERE cs.room_id = ? ORDER BY cs.submitted_at DESC`, [room.id]);
     res.json({ submissions });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.patch('/:submission_id/review', verifyTeacher, async (req, res) => {
@@ -41,7 +41,7 @@ router.patch('/:submission_id/review', verifyTeacher, async (req, res) => {
     const status = grade === null ? 'reviewed' : 'graded';
     await dbRun('UPDATE code_submissions SET grade = ?, feedback = ?, status = ?, graded_by = ?, graded_at = CURRENT_TIMESTAMP WHERE id = ?', [grade, feedback, status, req.user.id, submission.id]);
     res.json({ success: true, grade, feedback, status });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/student/:student_id', verifyStudent, async (req, res) => {
@@ -51,7 +51,7 @@ router.get('/student/:student_id', verifyStudent, async (req, res) => {
       `SELECT cs.id, cs.student_id, cs.room_id, cs.language, cs.grade, cs.feedback, cs.status, cs.submitted_at, r.subject, r.class_name
        FROM code_submissions cs JOIN rooms r ON cs.room_id = r.id WHERE cs.student_id = ? ORDER BY cs.submitted_at DESC`, [req.user.id]);
     res.json({ submissions });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 module.exports = router;

@@ -76,7 +76,7 @@ router.get('/room/:room_id', verifyTeacher, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found for this teacher' });
     const exams = await dbAll('SELECT * FROM exams WHERE room_id = ? ORDER BY id DESC', [room.id]);
     res.json({ exams: exams.map(exam => ({ ...exam, questions: parseQuestions(exam) })) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/active/:room_code', verifyStudent, async (req, res) => {
@@ -89,7 +89,7 @@ router.get('/active/:room_code', verifyStudent, async (req, res) => {
     if (!await studentRoomAccess(req.user.id, exam.room_id)) return res.status(403).json({ error: 'This exam is not assigned to your enrollment.' });
     const questions = parseQuestions(exam);
     res.json({ exam: { ...exam, questions: cleanQuestions(questions) } });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.patch('/:exam_id/launch', verifyTeacher, async (req, res) => {
@@ -104,7 +104,7 @@ router.patch('/:exam_id/launch', verifyTeacher, async (req, res) => {
       exam: { ...saved, questions: cleanQuestions(questions) }
     });
     res.json({ exam: { ...saved, questions } });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/student/:student_id', verifyStudent, async (req, res) => {
@@ -116,7 +116,7 @@ router.get('/student/:student_id', verifyStudent, async (req, res) => {
        FROM exam_submissions es JOIN exams e ON es.exam_id = e.id JOIN rooms r ON e.room_id = r.id JOIN teachers t ON r.teacher_id = t.id
        WHERE es.student_id = ? ORDER BY es.submitted_at DESC`, [req.user.id]);
     res.json({ history });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.get('/:exam_id/results', verifyTeacher, async (req, res) => {
@@ -127,7 +127,7 @@ router.get('/:exam_id/results', verifyTeacher, async (req, res) => {
       `SELECT es.*, s.name, s.roll_no, s.usn, s.avatar_color FROM exam_submissions es JOIN students s ON es.student_id = s.id
        WHERE es.exam_id = ? ORDER BY CASE WHEN es.status = 'pending_review' THEN 0 ELSE 1 END, es.submitted_at DESC`, [exam.id]);
     res.json({ results: results.map(r => ({ ...r, answers: JSON.parse(r.answers || '{}'), question_scores: JSON.parse(r.question_scores || '{}') })) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.post('/submit', verifyStudent, async (req, res) => {
@@ -173,7 +173,7 @@ router.post('/submit', verifyStudent, async (req, res) => {
       [req.user.id, exam_id, JSON.stringify(safeAnswers), score, total, percentage, status, JSON.stringify(questionScores)]
     );
     res.status(201).json({ id: result.lastID, score, total, percentage, status, message: hasManual ? 'Submitted. Written responses are awaiting teacher review.' : 'Submitted and graded.' });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 router.patch('/:exam_id/submissions/:submission_id/grade', verifyTeacher, async (req, res) => {
@@ -202,7 +202,7 @@ router.patch('/:exam_id/submissions/:submission_id/grade', verifyTeacher, async 
     await dbRun('UPDATE exam_submissions SET score = ?, percentage = ?, status = ?, question_scores = ?, feedback = ?, graded_by = ?, graded_at = CASE WHEN ? = \'graded\' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id = ?',
       [score, percentage, status, JSON.stringify(scores), feedback, req.user.id, status, submission.id]);
     res.json({ success: true, score, total: submission.total, percentage, status, question_scores: scores, feedback });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 // Student-safe exam detail: never expose answer keys or grading rubrics.
@@ -227,7 +227,7 @@ const { JWT_SECRET } = require('../config');
     } else return res.status(403).json({ error: 'Account access required' });
     const questions = parseQuestions(exam);
     res.json({ ...exam, questions: user.role === 'teacher' ? questions : cleanQuestions(questions) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { (console.error('[API] Request failed:', err), res.status(500).json({ error: 'Something went wrong' })); }
 });
 
 module.exports = router;
