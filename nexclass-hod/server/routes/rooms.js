@@ -1,11 +1,11 @@
 const express = require('express')
 const crypto = require('crypto')
 const { dbGet, dbAll, dbRun } = require('../db/database')
-const { authenticate } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 const router = express.Router()
-router.use(authenticate)
+router.use(requireAuth)
 
-router.get('/', (req, res) => {
+router.get('/', requireRole('hod', 'teacher'), (req, res) => {
   const where = req.user.role === 'teacher' ? 'WHERE r.teacher_id=?' : ''
   const params = req.user.role === 'teacher' ? [req.user.id] : []
   if (req.user.role === 'student') {
@@ -29,7 +29,7 @@ router.get('/:code', (req, res) => {
   const room = dbGet(`SELECT r.*, t.name AS teacher_name FROM rooms r
     LEFT JOIN teachers t ON t.id=r.teacher_id WHERE r.code=?`, [String(req.params.code).toUpperCase()])
   if (!room) return res.status(404).json({ error: 'Room not found' })
-  if (req.user.role === 'teacher' && room.teacher_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
+  if (req.user.role === 'student' && room.status !== 'active') return res.status(404).json({ error: 'Room not found or session ended' })
   let attendance
   if (req.user.role === 'student') {
     const student = dbGet('SELECT semester FROM students WHERE id=?', [req.user.id])
@@ -46,9 +46,8 @@ router.get('/:code', (req, res) => {
   res.json({ ...room, attendance, notes, exams })
 })
 
-router.post('/', (req, res) => {
+router.post('/', requireRole('teacher'), (req, res) => {
   const { subject, semester } = req.body || {}
-  if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Only teachers can create rooms' })
   if (!subject || !Number.isInteger(Number(semester))) return res.status(400).json({ error: 'Subject and semester are required' })
   const teacher = dbGet('SELECT status, semester FROM teachers WHERE id=?', [req.user.id])
   if (!teacher || teacher.status !== 'approved') return res.status(403).json({ error: 'Approved teacher account required' })
@@ -59,10 +58,10 @@ router.post('/', (req, res) => {
   res.status(201).json(dbGet('SELECT * FROM rooms WHERE id=?', [result.lastInsertRowid]))
 })
 
-router.patch('/:code/end', (req, res) => {
+router.patch('/:code/end', requireRole('teacher'), (req, res) => {
   const room = dbGet('SELECT * FROM rooms WHERE code=?', [String(req.params.code).toUpperCase()])
   if (!room) return res.status(404).json({ error: 'Room not found' })
-  if (req.user.role !== 'hod' && !(req.user.role === 'teacher' && room.teacher_id === req.user.id)) return res.status(403).json({ error: 'Forbidden' })
+  if (room.teacher_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' })
   dbRun("UPDATE rooms SET status='completed', ended_at=CURRENT_TIMESTAMP WHERE id=?", [room.id])
   res.json({ message: 'Session ended' })
 })

@@ -2,7 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'edusync.db');
+const { DB_PATH } = require('../config');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 let db;

@@ -1,10 +1,11 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
-const { authenticate, allowRoles } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 const router = express.Router()
-router.use(authenticate)
+router.use(requireAuth)
 
-router.post('/', allowRoles('student'), (req, res) => {
+router.post('/', requireRole('student'), (req, res) => {
+  if (req.body?.student_id != null && Number(req.body.student_id) !== req.user.id) return res.status(403).json({ error: 'Students can only mark their own attendance' })
   const { room_id, status = 'present' } = req.body || {}
   const room = dbGet("SELECT * FROM rooms WHERE id=? AND status='active'", [Number(room_id)])
   if (!room) return res.status(404).json({ error: 'Room not found or session ended' })
@@ -22,7 +23,7 @@ router.get('/student/:id', (req, res) => {
     FROM attendance a JOIN rooms r ON a.room_id=r.id LEFT JOIN teachers t ON r.teacher_id=t.id
     WHERE a.student_id=? ORDER BY r.created_at DESC`, [id]))
 })
-router.get('/summary', allowRoles('hod'), (_req, res) => {
+router.get('/summary', requireRole('hod'), (_req, res) => {
   res.json(dbAll(`SELECT s.semester, COUNT(DISTINCT a.student_id) AS students,
     COUNT(DISTINCT a.room_id) AS sessions,
     SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) AS present_count,

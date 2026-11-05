@@ -1,12 +1,11 @@
 const express = require('express')
 const { dbGet, dbRun } = require('../db/database')
-const { authenticate } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 const router = express.Router()
-router.use(authenticate)
+router.use(requireAuth)
 
-router.post('/', (req, res) => {
+router.post('/', requireRole('teacher'), (req, res) => {
   const { room_id, title, duration_mins = 30, questions_json = [] } = req.body || {}
-  if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Only teachers can create exams' })
   if (!room_id || !title) return res.status(400).json({ error: 'Room and exam title are required' })
   const room = dbGet("SELECT * FROM rooms WHERE id=? AND teacher_id=? AND status='active'", [Number(room_id), req.user.id])
   if (!room) return res.status(404).json({ error: 'Active room not found' })

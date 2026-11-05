@@ -1,11 +1,11 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
-const { authenticate, allowRoles } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 
 const router = express.Router()
-router.use(authenticate)
+router.use(requireAuth)
 
-router.post('/', allowRoles('hod'), (req, res) => {
+router.post('/', requireRole('hod'), (req, res) => {
   const teacherId = Number(req.body?.teacher_id)
   const message = String(req.body?.message || '').trim().slice(0, 2000)
   const type = ['reminder', 'warning', 'urgent'].includes(req.body?.type)

@@ -1,11 +1,11 @@
-const express = require('express')
 const http = require('http')
 const os = require('os')
-const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const { Server } = require('socket.io')
+const { PORT, JWT_SECRET } = require('./config')
+const { dbGet } = require('./db/database')
+const { createApp } = require('./app')
 
-const PORT = Number(process.env.NEXCLASS_PORT || 3000)
 const localIP = () => {
   try {
     for (const entries of Object.values(os.networkInterfaces())) {
@@ -20,31 +20,24 @@ const localIP = () => {
 }
 
 function startServer() {
-  const { jwtSecret } = require('./db/database')
-  const app = express()
+  const app = createApp()
   const httpServer = http.createServer(app)
   const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST', 'PATCH', 'DELETE'] } })
-  app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }))
-  app.use(express.json({ limit: '2mb' }))
-  app.use(express.urlencoded({ extended: true, limit: '2mb' }))
-  app.get('/health', (_req, res) => res.json({ status: 'ok', server: 'NexClass HOD Server', version: '1.0.0', timestamp: new Date().toISOString() }))
-  app.get('/discover', (_req, res) => res.json({ type: 'nexclass-hod-server', version: '1.0.0', ip: localIP(), port: PORT }))
-  app.use('/api/auth', require('./routes/auth'))
-  app.use('/api/teachers', require('./routes/teachers'))
-  app.use('/api/students', require('./routes/students'))
-  app.use('/api/rooms', require('./routes/rooms'))
-  app.use('/api/attendance', require('./routes/attendance'))
-  app.use('/api/exams', require('./routes/exams'))
-  app.use('/api/scores', require('./routes/scores'))
-  app.use('/api/alerts', require('./routes/alerts'))
-  app.use((err, _req, res, _next) => {
-    console.error('API request failed:', err.message)
-    res.status(500).json({ error: 'Server error' })
-  })
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || (socket.handshake.headers.authorization || '').replace(/^Bearer\s+/i, '')
-    if (!token) return next(new Error('Authentication required'))
-    try { socket.user = jwt.verify(token, jwtSecret); next() } catch { next(new Error('Invalid or expired token')) }
+    const token = socket.handshake.auth?.token
+    if (!token) return next(new Error('Authentication failed'))
+    try {
+      const user = jwt.verify(token, JWT_SECRET)
+      if (!user || !Number.isInteger(Number(user.id)) || !user.role) return next(new Error('Authentication failed'))
+      if (user.role === 'hod') {
+        const hod = dbGet('SELECT auth_version FROM hod WHERE id=?', [Number(user.id)])
+        if (!hod || Number(user.auth_version) !== Number(hod.auth_version)) return next(new Error('Authentication failed'))
+      }
+      socket.data.user = { ...user, id: Number(user.id) }
+      return next()
+    } catch {
+      return next(new Error('Authentication failed'))
+    }
   })
   require('./socket/events')(io)
 
@@ -52,8 +45,9 @@ function startServer() {
     const onError = (error) => { httpServer.removeListener('listening', onListening); reject(error) }
     const onListening = () => {
       httpServer.removeListener('error', onError)
-      const info = { ip: localIP(), port: PORT, close: () => new Promise((done) => io.close(() => done())) }
-      console.log(`\nNexClass HOD Server started\n  Local:   http://localhost:${PORT}\n  Network: http://${info.ip}:${PORT}\n`)
+      const port = httpServer.address().port
+      const info = { ip: localIP(), port, close: () => new Promise((done) => io.close(() => done())) }
+      console.log(`\nNexClass HOD Server started\n  Local:   http://localhost:${port}\n  Network: http://${info.ip}:${port}\n`)
       resolve(info)
     }
     httpServer.once('error', onError)
@@ -62,4 +56,4 @@ function startServer() {
   })
 }
 
-module.exports = { startServer }
+module.exports = { startServer, PORT }

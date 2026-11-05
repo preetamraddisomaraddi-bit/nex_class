@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiRequest } from '../api'
 
@@ -21,6 +21,18 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [shake, setShake] = useState(false)
   const [shakeKey, setShakeKey] = useState(0)
+  const [setupRequired, setSetupRequired] = useState(false)
+  const [setupChecked, setSetupChecked] = useState(false)
+  const [setupForm, setSetupForm] = useState({ name: '', employee_id: '', email: '', department: '', password: '', confirm_password: '' })
+
+  useEffect(() => {
+    let active = true
+    apiRequest('/setup/hod', { auth: false })
+      .then(result => { if (active) setSetupRequired(Boolean(result.setupRequired)) })
+      .catch(requestError => { if (active) setError(requestError.message) })
+      .finally(() => { if (active) setSetupChecked(true) })
+    return () => { active = false }
+  }, [])
 
   function triggerShake() {
     setShakeKey(key => key + 1)
@@ -55,6 +67,24 @@ export default function Login() {
       setError(loginError.message || 'Unable to sign in. Check your credentials and confirm the HOD server is running.')
       setPassword('')
       triggerShake()
+      setLoading(false)
+    }
+  }
+
+  async function handleSetup(event) {
+    event?.preventDefault()
+    if (loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await apiRequest('/setup/hod', { method: 'POST', auth: false, body: setupForm })
+      await window.electronAPI?.storeToken?.(result.token)
+      window.localStorage.setItem('nexclass_token', result.token)
+      window.localStorage.setItem('nexclass_hod_data', JSON.stringify(result.hod))
+      window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
+      navigate('/dashboard', { replace: true })
+    } catch (setupError) {
+      setError(setupError.message || 'Unable to set up the department')
       setLoading(false)
     }
   }
@@ -147,10 +177,24 @@ export default function Login() {
 
       <main className="login-form-panel" style={{ width: '58%', minHeight: '100vh', background: 'var(--bg)', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflowY: 'auto' }}>
         <div className="login-card login-animated" style={{ width: '100%', maxWidth: 400, padding: '0 48px', animation: 'fadeInUp 0.4s ease forwards' }}>
-          <div style={{ fontFamily: headingFont, fontSize: 26, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.5px' }}>Welcome back 👋</div>
-          <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 6, marginBottom: 36 }}>Sign in to your HOD account</p>
+          <div style={{ fontFamily: headingFont, fontSize: 26, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.5px' }}>{!setupChecked ? 'Checking department setup…' : setupRequired ? 'Set up your department' : 'Welcome back 👋'}</div>
+          <p style={{ fontSize: 14, color: 'var(--muted)', marginTop: 6, marginBottom: 36 }}>{setupRequired ? 'Create the first HOD account to secure this department.' : 'Sign in to your HOD account'}</p>
 
-          <form key={shakeKey} className={shake ? 'login-shaking' : undefined} onSubmit={handleLogin} onKeyDown={handleKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {setupRequired ? <form key={shakeKey} className={shake ? 'login-shaking' : undefined} onSubmit={handleSetup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {[
+              ['name', 'Full name', 'text', 'Your name'],
+              ['employee_id', 'Employee ID', 'text', 'Your employee ID'],
+              ['email', 'Email', 'email', 'name@example.edu'],
+              ['department', 'Department', 'text', 'Department name'],
+              ['password', 'Password', 'password', 'At least 8 characters, include a letter and number'],
+              ['confirm_password', 'Confirm password', 'password', 'Enter password again'],
+            ].map(([field, label, type, placeholder]) => <div key={field}>
+              <label htmlFor={`setup-${field}`} style={labelStyle}>{label}</label>
+              <input id={`setup-${field}`} className="login-input" name={field} type={type} required minLength={field.includes('password') ? 8 : undefined} autoComplete={field === 'password' ? 'new-password' : 'off'} placeholder={placeholder} value={setupForm[field]} onChange={event => { setSetupForm(form => ({ ...form, [field]: event.target.value })); setError('') }} style={inputStyle} />
+            </div>)}
+            {error && <div role="alert" style={{ background: 'var(--red-light)', border: '1px solid #FCA5A5', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--red)' }}>{error}</div>}
+            <button type="submit" className="login-submit" disabled={loading || !setupChecked} style={{ width: '100%', background: 'var(--indigo)', color: 'var(--white)', border: 'none', borderRadius: 8, padding: 12, fontSize: 14, fontWeight: 600, fontFamily: 'Inter, sans-serif', cursor: loading ? 'wait' : 'pointer', marginTop: 4 }}>{loading ? 'Setting up…' : 'Set Up Department'}</button>
+          </form> : <form key={shakeKey} className={shake ? 'login-shaking' : undefined} onSubmit={handleLogin} onKeyDown={handleKeyDown} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div>
               <label htmlFor="employee-id" style={labelStyle}>Employee ID</label>
               <input id="employee-id" className="login-input" name="employeeId" type="text" autoComplete="username" placeholder="Enter your employee ID" value={employeeId} onChange={event => { setEmployeeId(event.target.value); setError('') }} style={inputStyle} />
@@ -170,7 +214,7 @@ export default function Login() {
               {loading && <span aria-hidden="true" style={{ width: 15, height: 15, border: '2px solid rgba(255,255,255,0.45)', borderTopColor: 'var(--white)', borderRadius: '50%', animation: 'loginSpin 0.75s linear infinite' }} />}
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
-          </form>
+          </form>}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 28 }}>
             <span aria-hidden="true" style={{ flex: 1, height: 1, background: 'var(--border)' }} />

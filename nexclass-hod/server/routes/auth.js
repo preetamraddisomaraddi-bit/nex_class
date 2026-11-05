@@ -1,20 +1,39 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
-const { dbGet, dbRun, jwtSecret } = require('../db/database')
+const { dbGet, dbRun } = require('../db/database')
+const { JWT_SECRET, JWT_EXPIRES } = require('../config')
+const { requireAuth, requireRole } = require('../middleware/auth')
 
 const router = express.Router()
 const clean = ({ password_hash, ...record }) => record
-const makeToken = (user) => jwt.sign(user, jwtSecret, { expiresIn: '7d' })
-const badCredentials = (res) => res.status(401).json({ error: 'Invalid ID or password' })
+const makeToken = user => jwt.sign(user, JWT_SECRET, { expiresIn: JWT_EXPIRES })
+const badCredentials = res => res.status(401).json({ error: 'Invalid credentials' })
 
 router.post('/hod/login', (req, res) => {
   const { employee_id, password } = req.body || {}
   if (!employee_id || !password) return res.status(400).json({ error: 'Employee ID and password required' })
   const hod = dbGet('SELECT * FROM hod WHERE employee_id = ?', [String(employee_id).trim()])
   if (!hod || !bcrypt.compareSync(String(password), hod.password_hash)) return badCredentials(res)
-  const profile = clean(hod)
-  res.json({ token: makeToken({ id: hod.id, role: 'hod', employee_id: hod.employee_id }), hod: profile })
+  res.json({ token: makeToken({ id: hod.id, role: 'hod', employee_id: hod.employee_id, auth_version: hod.auth_version }), hod: clean(hod) })
+})
+
+router.post('/hod/change-password', requireAuth, requireRole('hod'), (req, res) => {
+  const { current_password, new_password } = req.body || {}
+  const hod = dbGet('SELECT * FROM hod WHERE id=?', [req.user.id])
+  if (!hod || !bcrypt.compareSync(String(current_password || ''), hod.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' })
+  }
+  const password = String(new_password || '')
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters and include a letter and a number' })
+  }
+  dbRun('UPDATE hod SET password_hash=?, auth_version=auth_version+1 WHERE id=?', [bcrypt.hashSync(password, 12), req.user.id])
+  const updated = dbGet('SELECT * FROM hod WHERE id=?', [req.user.id])
+  return res.json({
+    message: 'Password changed successfully',
+    token: makeToken({ id: updated.id, role: 'hod', employee_id: updated.employee_id, auth_version: updated.auth_version }),
+  })
 })
 
 router.post('/teacher/register', (req, res) => {

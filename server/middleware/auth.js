@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'edusync_secret_key_2024';
-const JWT_SECRET_ADMIN = process.env.JWT_SECRET_ADMIN || 'edusync_admin_secret_key_change_in_production';
+const { JWT_SECRET, JWT_SECRET_ADMIN } = require('../config');
 
 function verifyTeacher(req, res, next) {
   const authHeader = req.headers['authorization'];

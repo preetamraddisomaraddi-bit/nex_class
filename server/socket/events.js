@@ -1,5 +1,6 @@
 const { dbGet, dbAll, dbRun } = require('../db/database');
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config');
 
 const roomMembers = {};
 const socketUsers = {};
@@ -16,7 +17,7 @@ function registerSocketEvents(io) {
       try {
         const token = socket.handshake.auth?.token;
         if (!token) throw new Error('missing token');
-        identity = jwt.verify(token, process.env.JWT_SECRET || 'edusync_secret_key_2024');
+        identity = jwt.verify(token, JWT_SECRET);
       } catch {
         socket.emit('room:error', { error: 'Sign in is required to join a classroom.' });
         return;

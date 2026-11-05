@@ -30,7 +30,7 @@ The existing React/Vite/Tailwind, Electron, Express, Socket.IO and SQLite archit
 7. Fix admin requests to resolve the currently selected server on each request, include `/api`, and default to port 4000.
 8. Wait for the admin Vite server before Electron starts; build frontend assets before packaging; restrict packaged files. Set strict desktop dev ports to avoid Electron connecting to the wrong port.
 9. Fix registration requests to use the serving origin or `VITE_API_URL`, with a development API proxy. Add missing Tailwind/PostCSS configuration so production registration styles compile.
-10. Load backend `.env` before routes, honor `JWT_SECRET`, validate roles in existing middleware, and send stored tokens from teacher/student HTTP clients. Retain development fallback secrets for compatibility; configure secrets for real use.
+10. Load backend configuration before routes, generate and persist a private JWT secret when no environment secret is configured, validate roles and ownership in middleware, and require stored tokens for authenticated HTTP and socket connections.
 11. Keep the backend running if network-interface enumeration is unavailable.
 12. Broadcast persisted exam data and launch timestamp. Prevent exam reload/reset on each answer change, use the latest answers for timer submission, parse SQLite timestamps as UTC, and guard against concurrent submission.
 13. Repair teacher dependency lock synchronization, add the registration lockfile, update admin/server locks for added test/startup dependencies, and add integration/migration tests plus current setup instructions.

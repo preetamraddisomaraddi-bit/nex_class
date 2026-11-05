@@ -37,7 +37,15 @@ export const connectSocket = (serverUrl, studentData) => {
     console.info('Connected to HOD server')
     if (activeStudent && activeRoomCode) emitRoomJoin()
   })
-  socket.on('connect_error', error => console.error('HOD socket connection error:', error.message))
+  socket.on('connect_error', error => {
+    console.error('HOD socket connection error:', error.message)
+    if (error?.message === 'Authentication failed') {
+      localStorage.removeItem('nexclass_student_token')
+      localStorage.removeItem('nexclass_student_data')
+      disconnectSocket()
+      window.dispatchEvent(new CustomEvent('nexclass-auth-failed'))
+    }
+  })
   socket.on('disconnect', reason => console.info('Disconnected from HOD server:', reason))
   socket.on('hod:alert', data => window.dispatchEvent(new CustomEvent('hod-alert', { detail: data })))
   window.__socket = socket
