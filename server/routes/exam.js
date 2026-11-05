@@ -211,11 +211,12 @@ router.get('/:exam_id', async (req, res) => {
     const exam = await dbGet('SELECT * FROM exams WHERE id = ?', [req.params.exam_id]);
     if (!exam) return res.status(404).json({ error: 'Exam not found' });
     const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config');
     let user;
     try {
       const token = req.headers.authorization?.split(' ')[1];
       if (!token) throw new Error('missing token');
-      user = jwt.verify(token, process.env.JWT_SECRET || 'edusync_secret_key_2024');
+      user = jwt.verify(token, JWT_SECRET);
     } catch { return res.status(401).json({ error: 'Authorization token required' }); }
     const room = await dbGet('SELECT * FROM rooms WHERE id = ?', [exam.room_id]);
     if (user.role === 'teacher') {

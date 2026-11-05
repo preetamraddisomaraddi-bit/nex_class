@@ -82,7 +82,7 @@ app.get('/api/health', (req, res) => {
 registerSocketEvents(io);
 
 // ── Start ────────────────────────────────────────────────
-const PORT = process.env.PORT || 4000;
+const { PORT } = require('./config');
 
 server.listen(PORT, '0.0.0.0', () => {
   // Show LAN IP so students know where to connect

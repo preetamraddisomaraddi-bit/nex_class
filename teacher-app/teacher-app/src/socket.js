@@ -35,7 +35,15 @@ export const connectSocket = (serverUrl, teacherData) => {
     })
   })
 
-  socket.on('connect_error', error => console.error('HOD socket connection error:', error.message))
+  socket.on('connect_error', error => {
+    console.error('HOD socket connection error:', error.message)
+    if (error?.message === 'Authentication failed') {
+      localStorage.removeItem('nexclass_teacher_token')
+      localStorage.removeItem('nexclass_teacher_data')
+      disconnectSocket()
+      window.dispatchEvent(new CustomEvent('nexclass-auth-failed'))
+    }
+  })
   socket.on('disconnect', reason => console.info('Disconnected from HOD server:', reason))
   socket.on('account:approved', data => {
     window.dispatchEvent(new CustomEvent('teacher-account-approved', { detail: data }))

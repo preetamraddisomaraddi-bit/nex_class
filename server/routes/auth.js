@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { dbGet, dbRun } = require('../db/database');
 const { verifyAdmin } = require('../middleware/auth');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'edusync_secret_key_2024';
+const { JWT_SECRET, JWT_EXPIRES } = require('../config');
 
 // Teacher Register
 router.post('/teacher/register', async (req, res) => {
@@ -33,7 +33,7 @@ router.post('/teacher/register', async (req, res) => {
       [name, email, password_hash, subject || '', university_id, department_id || null, employee_id || null, status]
     );
 
-    const token = jwt.sign({ id: result.lastID, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: result.lastID, role: 'teacher' }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({
       token,
       user: {
@@ -57,7 +57,7 @@ router.post('/teacher/login', async (req, res) => {
     const { email, password } = req.body;
     const teacher = await dbGet('SELECT * FROM teachers WHERE email = ?', [email]);
     if (!teacher || !bcrypt.compareSync(password, teacher.password_hash)) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     if (teacher.university_id && teacher.status === 'pending') {
@@ -67,7 +67,7 @@ router.post('/teacher/login', async (req, res) => {
       return res.status(403).json({ error: 'Your account registration was rejected by the University Administrator.' });
     }
 
-    const token = jwt.sign({ id: teacher.id, role: 'teacher' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: teacher.id, role: 'teacher' }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({
       token,
       user: {
@@ -127,7 +127,7 @@ router.post('/student/register', async (req, res) => {
       ]
     );
 
-    const token = jwt.sign({ id: result.lastID, role: 'student' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: result.lastID, role: 'student' }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({
       token,
       user: {
@@ -168,7 +168,7 @@ router.post('/student/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ id: student.id, role: 'student' }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: student.id, role: 'student' }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
     res.json({
       token,
       user: {

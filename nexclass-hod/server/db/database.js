@@ -1,11 +1,5 @@
-const path = require('path')
-const crypto = require('crypto')
 const Database = require('better-sqlite3')
-const bcrypt = require('bcryptjs')
-const { app } = require('electron')
-
-const userDataPath = app.getPath('userData')
-const DB_PATH = process.env.NEXCLASS_DB_PATH || path.join(userDataPath, 'nexclass-hod.db')
+const { DB_PATH, JWT_SECRET } = require('../config')
 const db = new Database(DB_PATH)
 
 db.pragma('journal_mode = WAL')
@@ -21,6 +15,7 @@ db.exec(`
     university TEXT NOT NULL,
     email TEXT NOT NULL,
     password_hash TEXT NOT NULL,
+    auth_version INTEGER NOT NULL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS teachers (
@@ -90,30 +85,22 @@ db.exec(`
   );
 `)
 
-const existingHOD = db.prepare('SELECT id FROM hod WHERE id = 1').get()
-if (!existingHOD) {
-  const passwordHash = bcrypt.hashSync('hod123', 12)
-  db.prepare(`INSERT INTO hod
-    (id, name, employee_id, department, department_code, university, email, password_hash)
-    VALUES (1, ?, ?, ?, ?, ?, ?, ?)`)
-    .run('Dr. Rajesh Kumar', 'BIT-HOD-001', 'Computer Science & Engineering', 'CSE',
-      'Bangalore Institute of Technology', 'hod.cse@nexclass.demo', passwordHash)
-  console.log('Default NexClass HOD account seeded (BIT-HOD-001)')
+try { db.exec('ALTER TABLE hod ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 1') }
+catch (error) {
+  if (!String(error.message).includes('duplicate column')) throw error
 }
 
-let jwtSecret = process.env.NEXCLASS_JWT_SECRET
-if (!jwtSecret) {
-  const secretPath = path.join(userDataPath, 'nexclass-jwt-secret')
-  try {
-    jwtSecret = require('fs').readFileSync(secretPath, 'utf8')
-  } catch {
-    jwtSecret = crypto.randomBytes(48).toString('hex')
-    require('fs').writeFileSync(secretPath, jwtSecret, { mode: 0o600, flag: 'wx' })
-  }
+// Remove the exact original demo identity so upgrades also require first-run
+// setup instead of keeping the old seeded login active.
+const legacyDefaultHod = db.prepare('SELECT id,employee_id,email FROM hod WHERE id=1').get()
+if (legacyDefaultHod && legacyDefaultHod.employee_id === 'BIT-HOD-001' &&
+    legacyDefaultHod.email === 'hod.cse@nexclass.demo') {
+  db.prepare('DELETE FROM hod WHERE id=1').run()
+  console.log('Removed the legacy default HOD account; department setup is required.')
 }
 
 const dbGet = (sql, params = []) => db.prepare(sql).get(...params)
 const dbAll = (sql, params = []) => db.prepare(sql).all(...params)
 const dbRun = (sql, params = []) => db.prepare(sql).run(...params)
 
-module.exports = { db, dbGet, dbAll, dbRun, jwtSecret, DB_PATH }
+module.exports = { db, dbGet, dbAll, dbRun, jwtSecret: JWT_SECRET, DB_PATH }

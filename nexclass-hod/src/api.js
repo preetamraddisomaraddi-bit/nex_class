@@ -1,7 +1,11 @@
 const DEFAULT_HOD_SERVER_URL = 'http://localhost:3000'
 
-export const getHODServerURL = () =>
-  (window.localStorage.getItem('nexclass_server_url') || DEFAULT_HOD_SERVER_URL).replace(/\/$/, '')
+export const getHODServerURL = async () => {
+  const savedUrl = window.localStorage.getItem('nexclass_server_url')
+  if (savedUrl) return savedUrl.replace(/\/$/, '')
+  const serverInfo = await window.electronAPI?.getServerInfo?.().catch?.(() => null)
+  return `http://localhost:${serverInfo?.port || new URL(DEFAULT_HOD_SERVER_URL).port}`
+}
 
 export async function apiRequest(path, { method = 'GET', body, auth = true } = {}) {
   const headers = { 'Content-Type': 'application/json' }
@@ -11,14 +15,16 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
   }
 
   let response
+  let serverUrl = DEFAULT_HOD_SERVER_URL
   try {
-    response = await fetch(`${getHODServerURL()}/api${path}`, {
+    serverUrl = await getHODServerURL()
+    response = await fetch(`${serverUrl}/api${path}`, {
       method,
       headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch {
-    throw new Error('Cannot reach the HOD server at http://localhost:3000. Make sure the HOD app is running.')
+    throw new Error(`Cannot reach the HOD server at ${serverUrl}. Make sure the HOD app is running.`)
   }
 
   const data = await response.json().catch(() => ({}))

@@ -1,11 +1,11 @@
 const express = require('express')
 const { dbGet, dbAll, dbRun } = require('../db/database')
-const { authenticate } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 const router = express.Router()
-router.use(authenticate)
+router.use(requireAuth)
 
-router.post('/', (req, res) => {
-  if (req.user.role !== 'student') return res.status(403).json({ error: 'Only students can submit scores' })
+router.post('/', requireRole('student'), (req, res) => {
+  if (req.body?.student_id != null && Number(req.body.student_id) !== req.user.id) return res.status(403).json({ error: 'Students can only submit their own scores' })
   const { exam_id, score, total = 100, answers_json = [] } = req.body || {}
   const exam = dbGet(`SELECT e.id,e.room_id,r.semester,r.status FROM exams e JOIN rooms r ON r.id=e.room_id WHERE e.id=?`, [Number(exam_id)])
   if (!exam) return res.status(404).json({ error: 'Exam not found' })
@@ -27,8 +27,7 @@ router.get('/student/:id', (req, res) => {
     FROM exam_scores es JOIN exams e ON e.id=es.exam_id JOIN rooms r ON r.id=e.room_id
     WHERE es.student_id=? ORDER BY es.submitted_at DESC`, [id]))
 })
-router.get('/exam/:id', (req, res) => {
-  if (!['hod', 'teacher'].includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' })
+router.get('/exam/:id', requireRole('hod', 'teacher'), (req, res) => {
   const exam = dbGet('SELECT e.id,r.teacher_id FROM exams e JOIN rooms r ON r.id=e.room_id WHERE e.id=?', [Number(req.params.id)])
   if (!exam) return res.status(404).json({ error: 'Exam not found' })
   if (req.user.role === 'teacher' && exam.teacher_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' })

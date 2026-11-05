@@ -1,11 +1,11 @@
 const express = require('express')
 const { dbGet, dbAll } = require('../db/database')
-const { authenticate, allowRoles } = require('../middleware/auth')
+const { requireAuth, requireRole } = require('../middleware/auth')
 const router = express.Router()
 const publicStudent = (row) => { if (!row) return row; const { password_hash, ...safe } = row; return safe }
 
-router.use(authenticate)
-router.get('/', allowRoles('hod'), (req, res) => {
+router.use(requireAuth)
+router.get('/', requireRole('hod', 'teacher'), (req, res) => {
   const params = []
   let where = ''
   if (req.query.semester) { where = 'WHERE s.semester=?'; params.push(Number(req.query.semester)) }
@@ -19,7 +19,7 @@ router.get('/', allowRoles('hod'), (req, res) => {
 })
 router.get('/:id', (req, res) => {
   const id = Number(req.params.id)
-  if (req.user.role !== 'hod' && !(req.user.role === 'student' && req.user.id === id)) return res.status(403).json({ error: 'Forbidden' })
+  if (!['hod', 'teacher'].includes(req.user.role) && !(req.user.role === 'student' && req.user.id === id)) return res.status(403).json({ error: 'Forbidden' })
   const student = dbGet('SELECT * FROM students WHERE id=?', [id])
   if (!student) return res.status(404).json({ error: 'Student not found' })
   const attendance = dbAll(`SELECT a.*, r.subject, r.code AS room_code, r.created_at AS date, t.name AS teacher_name

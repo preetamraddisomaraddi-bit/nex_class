@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const { dbGet, dbAll, dbRun } = require('../db/database');
 const { verifyAdmin } = require('../middleware/auth');
 
-const JWT_SECRET_ADMIN = process.env.JWT_SECRET_ADMIN || 'edusync_admin_secret_key_change_in_production';
+const { JWT_SECRET_ADMIN, JWT_EXPIRES } = require('../config');
 
 // POST /api/universities/register
 router.post('/register', async (req, res) => {
@@ -81,7 +81,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { university_id: uni.id, admin_email: uni.admin_email, role: 'admin' },
       JWT_SECRET_ADMIN,
-      { expiresIn: '7d' }
+      { expiresIn: JWT_EXPIRES }
     );
 
     res.json({

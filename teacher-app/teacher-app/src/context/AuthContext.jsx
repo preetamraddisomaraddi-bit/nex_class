@@ -11,6 +11,8 @@ export function AuthProvider({ children }) {
   )
 
   useEffect(() => {
+    const handleAuthFailure = () => logout()
+    window.addEventListener('nexclass-auth-failed', handleAuthFailure)
     const token = localStorage.getItem('nexclass_teacher_token')
     const savedTeacher = localStorage.getItem('nexclass_teacher_data')
     if (token && savedTeacher) {
@@ -24,7 +26,10 @@ export function AuthProvider({ children }) {
       }
     }
     setIsLoading(false)
-    return () => disconnectSocket()
+    return () => {
+      window.removeEventListener('nexclass-auth-failed', handleAuthFailure)
+      disconnectSocket()
+    }
   }, [])
 
   const login = (teacherData, token, url) => {

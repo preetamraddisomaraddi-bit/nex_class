@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { io } from 'socket.io-client'
 import { apiRequest, getHODServerURL } from '../api'
+import { connectSocket } from '../socket'
 
 const HODContext = createContext(null)
 
@@ -90,7 +90,7 @@ export function HODProvider({ children }) {
       }))
     }
 
-    const connect = () => {
+    const connect = async () => {
       socket?.disconnect()
       socket = null
       const token = window.localStorage.getItem('nexclass_token')
@@ -99,17 +99,14 @@ export function HODProvider({ children }) {
         return
       }
 
-      socket = io(getHODServerURL(), {
-        auth: { token },
-        transports: ['websocket'],
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1500,
-        timeout: 10000,
-      })
+      const serverUrl = await getHODServerURL()
+      if (!mounted || window.localStorage.getItem('nexclass_token') !== token) return
+      socket = connectSocket(serverUrl, token)
+      if (!socket) return
       socketRef.current = socket
 
       socket.on('connect', () => {
+        socket.emit('hod:connect')
         if (mounted) setRealtime(previous => ({ ...previous, connected: true, error: '' }))
       })
       socket.on('disconnect', () => {

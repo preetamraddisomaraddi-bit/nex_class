@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useToast } from './AlertToast'
 import { useHOD } from '../context/HODContext'
+import { apiRequest } from '../api'
 
 const items = [
   { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
@@ -15,8 +16,8 @@ const items = [
 const headingFont = '"Plus Jakarta Sans", sans-serif'
 const gradient = 'linear-gradient(135deg, var(--indigo), var(--blue))'
 
-function Avatar({ size }) {
-  return <div aria-label="Dr. Rajesh Kumar" style={{ width: size, height: size, borderRadius: '50%', background: gradient, color: 'var(--white)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>RK</div>
+function Avatar({ size, initials = 'H' }) {
+  return <div aria-label="HOD profile" style={{ width: size, height: size, borderRadius: '50%', background: gradient, color: 'var(--white)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials}</div>
 }
 
 function NavigationItem({ item, badge = 0 }) {
@@ -36,10 +37,21 @@ export default function AppShell({ children }) {
   const showToast = useToast()
   const { pendingCount } = useHOD()
   const [loggingOut, setLoggingOut] = useState(false)
+  const [hodProfile, setHodProfile] = useState(() => {
+    try { return JSON.parse(window.localStorage.getItem('nexclass_hod_data') || '{}') } catch { return {} }
+  })
   const [date, setDate] = useState(() => new Date())
   useEffect(() => {
     const timer = setInterval(() => setDate(new Date()), 60000)
     return () => clearInterval(timer)
+  }, [])
+  useEffect(() => {
+    const updateProfile = event => {
+      if (!event.detail) return
+      try { setHodProfile(JSON.parse(window.localStorage.getItem('nexclass_hod_data') || '{}')) } catch { setHodProfile({}) }
+    }
+    window.addEventListener('nexclass-auth-change', updateProfile)
+    return () => window.removeEventListener('nexclass-auth-change', updateProfile)
   }, [])
   const title = items.find(item => pathname === item.path || pathname.startsWith(`${item.path}/`))?.label || 'Dashboard'
   const formattedDate = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).format(date)
@@ -57,6 +69,27 @@ export default function AppShell({ children }) {
       setLoggingOut(false)
     }
   }
+  async function changePassword() {
+    const currentPassword = window.prompt('Enter your current password')
+    if (currentPassword === null) return
+    const newPassword = window.prompt('Enter a new password (at least 8 characters, with a letter and number)')
+    if (newPassword === null) return
+    const confirmPassword = window.prompt('Confirm your new password')
+    if (confirmPassword === null) return
+    if (newPassword !== confirmPassword) return showToast('The new passwords do not match.', 'error')
+    try {
+      const result = await apiRequest('/auth/hod/change-password', { method: 'POST', body: { current_password: currentPassword, new_password: newPassword } })
+      await window.electronAPI?.storeToken?.(result.token)
+      window.localStorage.setItem('nexclass_token', result.token)
+      window.dispatchEvent(new CustomEvent('nexclass-auth-change', { detail: true }))
+      showToast('Password changed successfully.', 'success')
+    } catch (error) {
+      showToast(error.message || 'Unable to change password.', 'error')
+    }
+  }
+  const hodName = hodProfile.name || 'Head of Department'
+  const hodInitials = String(hodName).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('') || 'H'
+  const departmentName = hodProfile.department || 'Department'
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, color: 'var(--text)' }}>
       <aside style={{ position: 'fixed', left: 0, top: 0, bottom: 0, width: 220, background: 'var(--white)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', zIndex: 60 }}>
@@ -65,8 +98,8 @@ export default function AppShell({ children }) {
             <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 4, background: gradient }} />
             <span style={{ fontFamily: headingFont, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>NexClass<span style={{ color: 'var(--indigo)' }}> HOD</span></span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.3 }}>Computer Science &amp; Engineering</div>
-          <span style={{ background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, display: 'inline-block', marginTop: 4 }}>CSE</span>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.3 }}>{departmentName}</div>
+          <span style={{ background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, display: 'inline-block', marginTop: 4 }}>{hodProfile.department_code || 'HOD'}</span>
         </div>
         <nav aria-label="Main navigation" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 10px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted2)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '8px 10px 4px' }}>Department</div>
@@ -76,23 +109,24 @@ export default function AppShell({ children }) {
         </nav>
         <div style={{ padding: '14px 16px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <Avatar size={34} />
+            <Avatar size={34} initials={hodInitials} />
             <div style={{ flex: 1, minWidth: 0, marginLeft: 10 }}>
-              <div title="Dr. Rajesh Kumar" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Dr. Rajesh Kumar</div>
+              <div title={hodName} style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{hodName}</div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>Head of Department</div>
             </div>
             <button type="button" title="Logout" aria-label="Logout" disabled={loggingOut} onClick={logout} style={{ background: 'transparent', border: 'none', cursor: loggingOut ? 'wait' : 'pointer', fontSize: 16, color: 'var(--muted)', padding: 4 }}>→</button>
           </div>
+          <button type="button" onClick={changePassword} style={{ alignSelf: 'flex-start', background: 'transparent', border: 0, padding: '8px 0 0 44px', color: 'var(--indigo)', fontSize: 11, cursor: 'pointer' }}>Change password</button>
           <div style={{ fontSize: 10, color: 'var(--muted2)', textAlign: 'center', marginTop: 8 }}>v1.0.0</div>
         </div>
       </aside>
       <header style={{ position: 'fixed', top: 0, left: 220, right: 0, height: 56, background: 'var(--white)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 24px', zIndex: 50 }}>
         <h1 style={{ fontFamily: headingFont, fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{title}</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span style={{ background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>CSE Dept.</span>
+          <span style={{ background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>{hodProfile.department_code || 'HOD'} Dept.</span>
           <span aria-hidden="true" style={{ borderLeft: '1px solid var(--border)', height: 20 }} />
           <time dateTime={`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`} style={{ fontSize: 12, color: 'var(--muted)' }}>{formattedDate}</time>
-          <Avatar size={32} />
+          <Avatar size={32} initials={hodInitials} />
         </div>
       </header>
       <main style={{ position: 'relative', marginLeft: 220, marginTop: 56, height: 'calc(100vh - 56px)', minHeight: 'calc(100vh - 56px)', background: 'var(--bg)', padding: 28, overflowY: 'auto' }}>{children}</main>
