@@ -16,7 +16,7 @@ The nested teacher directory is intentional in this checkout; use the full path 
 
 ## Requirements
 
-Use Node.js 22 or newer and npm. Electron requires a graphical desktop. PowerPoint conversion additionally requires LibreOffice; code execution uses the internet-based Judge0 service. PDF presentation currently downloads PDF.js from a CDN.
+Use Node.js 22 or newer and npm. Electron requires a graphical desktop. PowerPoint conversion additionally requires LibreOffice. Student code runs on the HOD server in a local Docker sandbox; Docker Desktop or Docker Engine and the `nexclass-code-runner:1.0` image are required. PDF presentation currently downloads PDF.js from a CDN.
 
 ## Install and run
 

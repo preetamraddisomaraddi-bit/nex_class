@@ -30,6 +30,17 @@ curl http://localhost:3000/api/health
 
 The named Docker volume `nexclass-data` persists the database and other server data across container restarts.
 
+## Student code execution
+
+Student code is sent to the authenticated HOD server and run in a local Docker container. It is not sent to Judge0 or another public compiler. Install Docker Desktop (Windows/macOS) or Docker Engine (Linux), then build the isolated toolchain image on the server machine:
+
+```bash
+cd server
+docker build -t nexclass-code-runner:1.0 -f code-runner/Dockerfile code-runner
+```
+
+The runner supports Python, JavaScript, Java, C, and C++. Each run uses a disposable container with no network, no host file mounts, a read-only root filesystem, restricted capabilities, memory/CPU/process limits, a 10-second time limit, and capped output. The image must be built before students use Run Code. Docker must be available to the HOD server process. Code execution will report unavailable if Docker or the image is missing.
+
 ## Environment variables
 
 | Variable | Default | Purpose |
@@ -43,6 +54,7 @@ The named Docker volume `nexclass-data` persists the database and other server d
 | `JWT_EXPIRES` | `7d` | Token lifetime |
 | `TLS_CERT` | empty | Path to the TLS certificate; TLS is enabled when both TLS paths exist |
 | `TLS_KEY` | empty | Path to the TLS private key |
+| `CODE_RUNNER_IMAGE` | `nexclass-code-runner:1.0` | Locally built image used to execute student code |
 
 `server/.env.example` documents the variables. Do not commit `.env`, keys, or data files.
 

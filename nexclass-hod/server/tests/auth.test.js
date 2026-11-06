@@ -69,7 +69,7 @@ test('protected HOD route rejects a missing token with 401', async () => {
 test('createApp can be started without the desktop shell and health reports version and schema version', async () => {
   expect(runningServer.listening).toBe(false)
   const response = await request(app).get('/api/health').expect(200)
-  expect(response.body).toMatchObject({ status: 'ok', dbOk: true, schemaVersion: 2, connectedSockets: 0 })
+  expect(response.body).toMatchObject({ status: 'ok', dbOk: true, schemaVersion: 3, connectedSockets: 0 })
   expect(response.body.version).toBe(require('../package.json').version)
   expect(typeof response.body.uptime).toBe('number')
 })
@@ -78,9 +78,9 @@ test('fresh data directory runs migrations once', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexclass-migrations-fresh-'))
   const freshDb = new Database(path.join(dir, 'fresh.db'))
   try {
-    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(2)
-    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(2)
-    expect(freshDb.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n).toBe(2)
+    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(3)
+    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(3)
+    expect(freshDb.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n).toBe(3)
   } finally { freshDb.close(); fs.rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -96,7 +96,7 @@ test('old database without migration table upgrades and preserves records', asyn
       oldDb.exec(`ALTER TABLE ${table} DROP COLUMN locked_until`)
     }
     oldDb.exec('DROP TABLE audit_log')
-    expect(await runMigrations(oldDb, { dataDir: dir })).toBe(2)
+    expect(await runMigrations(oldDb, { dataDir: dir })).toBe(3)
     expect(oldDb.prepare('SELECT name FROM students WHERE usn=?').get('LEGACY-1').name).toBe('Legacy student')
     expect(oldDb.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n).toBe(0)
     expect(fs.readdirSync(path.join(dir, 'backups')).some(name => name.startsWith('pre-migration-2-'))).toBe(true)
@@ -193,4 +193,25 @@ test('teacher approval writes an audit entry', async () => {
 
 test('CSV export neutralizes formula cells', () => {
   expect(toCSV(['value'], [{ value: '=1+1' }])).toBe("value\r\n'=1+1")
+})
+
+test('code execution requires an authenticated student account', async () => {
+  await request(app).post('/api/code/execute').send({ code: 'print(1)', language: 'python' }).expect(401)
+  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${teacherOne.token}`).send({ code: 'print(1)', language: 'python' }).expect(403)
+})
+
+test('code execution rejects unsupported languages and oversized source before starting the runner', async () => {
+  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${studentOne.token}`).send({ code: 'echo unsafe', language: 'bash' }).expect(400)
+  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${studentOne.token}`).send({ code: 'x'.repeat(51 * 1024), language: 'python' }).expect(413)
+})
+
+test('code submissions persist for the room teacher and can be reviewed', async () => {
+  const room = db.prepare('SELECT id FROM rooms WHERE code=?').get(roomCode)
+  const submitted = await request(app).post('/api/code/submit').set('Authorization', `Bearer ${studentOne.token}`).send({ room_id: room.id, code: 'print(1)', language: 'python', output: '1' }).expect(201)
+  const list = await request(app).get(`/api/code/room/${room.id}`).set('Authorization', `Bearer ${teacherOne.token}`).expect(200)
+  expect(list.body.submissions[0]).toMatchObject({ id: submitted.body.id, code: 'print(1)', language: 'python', status: 'submitted' })
+  const review = await request(app).patch(`/api/code/${submitted.body.id}/review`).set('Authorization', `Bearer ${teacherOne.token}`).send({ grade: 88, feedback: 'Good work' }).expect(200)
+  expect(review.body).toMatchObject({ grade: 88, feedback: 'Good work', status: 'graded' })
+  const history = await request(app).get(`/api/code/student/${studentOne.id}`).set('Authorization', `Bearer ${studentOne.token}`).expect(200)
+  expect(history.body.submissions[0]).toMatchObject({ id: submitted.body.id, grade: 88, feedback: 'Good work' })
 })

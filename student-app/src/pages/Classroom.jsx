@@ -436,14 +436,6 @@ function CodeTab({ roomCode, socket, student, room }) {
 
   const languages = ['python', 'javascript', 'java', 'c', 'cpp']
 
-  const langIDs = {
-    'python': 71,
-    'javascript': 63,
-    'java': 62,
-    'cpp': 54,
-    'c': 50
-  }
-
   useEffect(() => {
     socket.on('code:received', handleBroadcast)
     return () => { socket.off('code:received') }
@@ -457,27 +449,12 @@ function CodeTab({ roomCode, socket, student, room }) {
 
   async function runCode() {
     setRunning(true)
-    setOutput('Compiling and running on Judge0...')
+    setOutput('Compiling and running on the department server...')
     try {
-      const response = await fetch('https://ce.judge0.com/submissions?wait=true', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          source_code: code,
-          language_id: langIDs[language] || 71,
-          stdin: ''
-        })
-      })
-      const result = await response.json()
-
-      let resOutput = ''
-      if (result.stdout) resOutput += result.stdout
-      if (result.stderr) resOutput += result.stderr
-      if (result.compile_output) resOutput += result.compile_output
-
-      setOutput(resOutput || 'Execution completed. (No output returned)')
-    } catch {
-      setOutput('Failed to run code. Make sure you have internet access for the Judge0 compiler.')
+      const { data } = await getAPI().post('/code/execute', { code, language }, { timeout: 20000 })
+      setOutput(data.output || 'Execution completed. (No output returned)')
+    } catch (error) {
+      setOutput(error.response?.data?.error || 'Could not run code. Check that the department server and its local code runner are available.')
     } finally {
       setRunning(false)
     }
