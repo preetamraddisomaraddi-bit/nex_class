@@ -7,6 +7,7 @@ const PORT = Number(process.env.PORT || 3000)
 const HOST = process.env.HOST || '0.0.0.0'
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info'
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS || ''
+const CODE_RUNNER_IMAGE = process.env.CODE_RUNNER_IMAGE || 'nexclass-code-runner:1.0'
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '7d'
 const TLS_CERT = process.env.TLS_CERT ? path.resolve(process.env.TLS_CERT) : ''
 const TLS_KEY = process.env.TLS_KEY ? path.resolve(process.env.TLS_KEY) : ''
@@ -48,6 +49,6 @@ function loadJwtSecret() {
   }
 }
 
-const config = { DATA_DIR, DB_PATH, HOST, JWT_EXPIRES, LOG_LEVEL, PORT, ALLOWED_ORIGINS, TLS_CERT, TLS_KEY, ensureDataDirectories }
+const config = { DATA_DIR, DB_PATH, HOST, JWT_EXPIRES, LOG_LEVEL, PORT, ALLOWED_ORIGINS, TLS_CERT, TLS_KEY, CODE_RUNNER_IMAGE, ensureDataDirectories }
 Object.defineProperty(config, 'JWT_SECRET', { enumerable: true, get: loadJwtSecret })
 module.exports = config

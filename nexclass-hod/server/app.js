@@ -35,7 +35,7 @@ function createApp() {
   app.use(requestLogger)
   app.use(globalLimiter)
   app.use((req, res, next) => {
-    const largeJson = req.method === 'POST' && (req.path === '/api/scores' || req.path === '/api/code/submit')
+    const largeJson = req.method === 'POST' && (req.path === '/api/scores' || req.path === '/api/code/submit' || req.path === '/api/code/execute')
     express.json({ limit: largeJson ? '1mb' : '100kb' })(req, res, next)
   })
   app.use(express.urlencoded({ extended: false, limit: '100kb' }))
@@ -71,6 +71,7 @@ function createApp() {
   app.use('/api/exams', require('./routes/exams'))
   app.use('/api/scores', require('./routes/scores'))
   app.use('/api/alerts', require('./routes/alerts'))
+  app.use('/api/code', require('./routes/code'))
   app.use('/api/audit', require('./routes/audit'))
 
   app.use((err, _req, res, _next) => {
