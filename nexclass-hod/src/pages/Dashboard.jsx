@@ -49,6 +49,9 @@ export default function Dashboard() {
   const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [codeRunner, setCodeRunner] = useState({ enabled: false, runner: 'disabled', languages: [] })
+  const [codeRunnerTest, setCodeRunnerTest] = useState('')
+  const [testingCodeRunner, setTestingCodeRunner] = useState(false)
   const seenEvents = useRef(new Set())
 
   const loadDashboardData = useCallback(async ({ initial = false } = {}) => {
@@ -71,6 +74,20 @@ export default function Dashboard() {
   useEffect(() => {
     loadDashboardData({ initial: true })
   }, [loadDashboardData])
+
+  useEffect(() => {
+    apiRequest('/code/status').then(setCodeRunner).catch(() => setCodeRunner({ enabled: false, runner: 'unavailable', languages: [] }))
+  }, [])
+
+  async function testCodeRunner() {
+    setTestingCodeRunner(true); setCodeRunnerTest('Testing…')
+    try {
+      const result = await apiRequest('/code/run', { method: 'POST', body: { language: 'python', source: 'print("ok")', stdin: '' } })
+      setCodeRunnerTest(result.status === 'ok' && result.stdout.trim() === 'ok' ? 'Test passed' : `Test failed (${result.status || 'no result'})`)
+    } catch (error) {
+      setCodeRunnerTest(error.message === 'Code runner is busy, try again' ? 'Runner busy, try again' : error.message || 'Test failed')
+    } finally { setTestingCodeRunner(false) }
+  }
 
   useEffect(() => {
     const latestEvent = realtime.recentEvents[0]
@@ -177,6 +194,11 @@ export default function Dashboard() {
       </section>
 
       {loadError && <div role="alert" style={{ padding: '12px 16px', borderRadius: 8, background: 'var(--red-light)', color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 13 }}><span>{loadError}</span><button type="button" onClick={() => loadDashboardData({ initial: true })} style={{ border: 0, borderRadius: 6, background: 'var(--red)', color: 'white', padding: '7px 12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button></div>}
+
+      <section style={{ ...panelStyle, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }} aria-label="Code runner status">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: '50%', background: codeRunner.enabled ? 'var(--green)' : 'var(--muted2)' }} /><div><div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Code Runner: {codeRunner.enabled ? 'Enabled' : 'Disabled'}</div><div style={{ marginTop: 2, fontSize: 11, color: 'var(--muted)' }}>Runner: {codeRunner.runner}{codeRunner.enabled ? ` · ${codeRunner.languages.join(', ')}` : ''}</div></div></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span role="status" style={{ fontSize: 12, color: codeRunnerTest === 'Test passed' ? 'var(--green)' : codeRunnerTest ? 'var(--red)' : 'var(--muted)' }}>{codeRunnerTest}</span><button type="button" onClick={testCodeRunner} disabled={!codeRunner.enabled || testingCodeRunner} style={{ border: 0, borderRadius: 6, background: 'var(--indigo)', color: 'white', padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: codeRunner.enabled && !testingCodeRunner ? 'pointer' : 'not-allowed', opacity: codeRunner.enabled && !testingCodeRunner ? 1 : 0.55 }}>Test</button></div>
+      </section>
 
       <section className="dashboard-stat-grid" aria-label="Department statistics">
         <StatCard icon="👨‍🏫" iconBg="var(--indigo-light)" value={approvedTeachers.length} label="Approved Teachers" subtitle={pendingTeachers.length ? `${pendingTeachers.length} pending approval` : 'All approved'} subtitleColor={pendingTeachers.length ? 'var(--amber)' : 'var(--green)'} />

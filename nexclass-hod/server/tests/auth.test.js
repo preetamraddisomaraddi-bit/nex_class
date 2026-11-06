@@ -9,12 +9,15 @@ const mockUserDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'nexclass-auth-te
 process.env.DATA_DIR = mockUserDataPath
 process.env.JWT_SECRET = 'test-only-secret-with-enough-entropy'
 process.env.PORT = '0'
+process.env.CODE_RUNNER = 'disabled'
 
 const { createApp } = require('../app')
 const { db } = require('../db/database')
 const { runMigrations } = require('../db/migrations')
 const { authLimiter } = require('../rateLimits')
 const { toCSV } = require('../../shared/csv')
+const jwt = require('jsonwebtoken')
+const { JWT_SECRET } = require('../config')
 let app
 
 let hodToken
@@ -195,14 +198,26 @@ test('CSV export neutralizes formula cells', () => {
   expect(toCSV(['value'], [{ value: '=1+1' }])).toBe("value\r\n'=1+1")
 })
 
-test('code execution requires an authenticated student account', async () => {
-  await request(app).post('/api/code/execute').send({ code: 'print(1)', language: 'python' }).expect(401)
-  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${teacherOne.token}`).send({ code: 'print(1)', language: 'python' }).expect(403)
+test('code status is authenticated and disabled execution returns the setup message', async () => {
+  await request(app).get('/api/code/status').expect(401)
+  await request(app).post('/api/code/run').send({ source: 'print(1)', language: 'python' }).expect(401)
+  const status = await request(app).get('/api/code/status').set('Authorization', `Bearer ${studentOne.token}`).expect(200)
+  expect(status.body).toMatchObject({ enabled: false, runner: 'disabled' })
+  const response = await request(app).post('/api/code/run').set('Authorization', `Bearer ${teacherOne.token}`).send({ source: 'print(1)', language: 'python' }).expect(503)
+  expect(response.body.error).toMatch(/Code execution is not configured/)
 })
 
-test('code execution rejects unsupported languages and oversized source before starting the runner', async () => {
-  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${studentOne.token}`).send({ code: 'echo unsafe', language: 'bash' }).expect(400)
-  await request(app).post('/api/code/execute').set('Authorization', `Bearer ${studentOne.token}`).send({ code: 'x'.repeat(51 * 1024), language: 'python' }).expect(413)
+test('code run validates language and byte limits', async () => {
+  const auth = { Authorization: `Bearer ${studentOne.token}` }
+  await request(app).post('/api/code/run').set(auth).send({ source: 'echo unsafe', language: 'bash' }).expect(400)
+  await request(app).post('/api/code/run').set(auth).send({ source: 'x'.repeat(51 * 1024), language: 'python' }).expect(400)
+  await request(app).post('/api/code/run').set(auth).send({ source: 'print(1)', stdin: 'x'.repeat(10 * 1024 + 1), language: 'python' }).expect(400)
+})
+
+test('eleventh run per user in one minute is rate limited', async () => {
+  const token = jwt.sign({ id: 765432, role: 'student' }, JWT_SECRET, { expiresIn: '1h' })
+  for (let i = 0; i < 10; i++) await request(app).post('/api/code/run').set('Authorization', `Bearer ${token}`).send({ source: 'print(1)', language: 'python' }).expect(503)
+  await request(app).post('/api/code/run').set('Authorization', `Bearer ${token}`).send({ source: 'print(1)', language: 'python' }).expect(429)
 })
 
 test('code submissions persist for the room teacher and can be reviewed', async () => {

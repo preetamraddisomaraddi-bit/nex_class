@@ -60,7 +60,7 @@ app.use((req, res, next) => {
   const route = req.path;
   const limit = req.method === 'POST' && route === '/api/pdfs/push'
     ? '20mb'
-    : req.method === 'POST' && (route === '/api/exam/submit' || route === '/api/code/submit')
+    : req.method === 'POST' && (route === '/api/exam/submit' || route === '/api/code/submit' || route === '/api/code/run')
       ? '1mb'
       : '100kb';
   express.json({ limit })(req, res, next);

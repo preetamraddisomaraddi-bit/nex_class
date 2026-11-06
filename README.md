@@ -16,7 +16,7 @@ The nested teacher directory is intentional in this checkout; use the full path 
 
 ## Requirements
 
-Use Node.js 22 or newer and npm. Electron requires a graphical desktop. PowerPoint conversion additionally requires LibreOffice. Student code runs on the HOD server in a local Docker sandbox; Docker Desktop or Docker Engine and the `nexclass-code-runner:1.0` image are required. PDF presentation currently downloads PDF.js from a CDN.
+Use Node.js 22 or newer and npm. Electron requires a graphical desktop. PowerPoint conversion additionally requires LibreOffice. Code execution is disabled by default. To enable it, deploy the self-hosted Judge0 stack in `deploy/judge0` and configure the HOD server with `CODE_RUNNER=judge0`, `JUDGE0_URL=http://127.0.0.1:2358`, and the matching `JUDGE0_AUTH_TOKEN`. Student and teacher apps send code only to the authenticated NexClass server. PDF presentation currently downloads PDF.js from a CDN.
 
 ## Install and run
 

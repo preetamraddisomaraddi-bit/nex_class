@@ -1,0 +1,33 @@
+services:
+  server:
+    image: judge0/judge0:1.13.1
+    depends_on: [db, redis]
+    volumes: ["./.env:/judge0.conf:ro"]
+    ports: ["127.0.0.1:2358:2358"]
+    privileged: true
+    restart: unless-stopped
+    env_file: .env
+  workers:
+    image: judge0/judge0:1.13.1
+    command: ["./scripts/workers"]
+    depends_on: [db, redis]
+    volumes: ["./.env:/judge0.conf:ro"]
+    privileged: true
+    restart: unless-stopped
+    env_file: .env
+  redis:
+    image: redis:7.2.4
+    command: ["sh", "-c", "redis-server --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    restart: unless-stopped
+    env_file: .env
+  db:
+    image: postgres:16.2
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-judge0}
+      POSTGRES_USER: ${POSTGRES_USER:-judge0}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+volumes:
+  postgres_data:

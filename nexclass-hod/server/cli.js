@@ -1,3 +1,12 @@
+// Load optional server-local settings before importing config and routes.
+const fs = require('fs')
+const path = require('path')
+const envPath = path.join(__dirname, '.env')
+if (fs.existsSync(envPath)) for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+  const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line)
+  if (match && !(match[1] in process.env)) process.env[match[1]] = match[2].replace(/^(['\"])(.*)\1$/, '$2')
+}
+
 const os = require('os')
 const { PORT, HOST, DATA_DIR, ensureDataDirectories } = require('./config')
 const { runMigrations } = require('./db/migrations')

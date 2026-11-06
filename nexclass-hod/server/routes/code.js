@@ -1,48 +1,32 @@
 const express = require('express')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { dbGet, dbAll, dbRun } = require('../db/database')
-const { SUPPORTED_LANGUAGES, runInSandbox } = require('../code-runner')
-const { CODE_RUNNER_IMAGE } = require('../config')
+const codeRunner = require('../code/runnerService')
 const { logger } = require('../logging')
-
+const { z } = require('zod')
 const router = express.Router()
-const attempts = new Map()
 const MAX_CODE_BYTES = 50 * 1024
-const WINDOW_MS = 60 * 1000
-const MAX_RUNS_PER_WINDOW = 6
+const supportedLanguages = new Set(codeRunner.LANGUAGES)
+const runSchema = z.object({
+  language: z.enum(['python', 'javascript', 'java', 'c', 'cpp']),
+  source: z.string().min(1).refine(s => Buffer.byteLength(s) <= MAX_CODE_BYTES, 'Must be 50 KB or less'),
+  stdin: z.string().optional().default('').refine(s => Buffer.byteLength(s) <= 10 * 1024, 'Must be 10 KB or less'),
+}).strict()
 
-function limitRuns(req, res, next) {
-  const now = Date.now()
-  const prior = (attempts.get(req.user.id) || []).filter(time => now - time < WINDOW_MS)
-  if (prior.length >= MAX_RUNS_PER_WINDOW) {
-    attempts.set(req.user.id, prior)
-    return res.status(429).json({ error: 'Code execution limit reached. Try again in a minute.' })
-  }
-  prior.push(now)
-  attempts.set(req.user.id, prior)
-  if (attempts.size > 10000) {
-    for (const [id, times] of attempts) if (!times.some(time => now - time < WINDOW_MS)) attempts.delete(id)
-  }
-  return next()
-}
-
-router.post('/execute', requireAuth, requireRole('student'), limitRuns, async (req, res) => {
-  const code = req.body?.code
-  const language = req.body?.language
-  if (typeof code !== 'string' || !code.trim()) return res.status(400).json({ error: 'Code is required' })
-  if (Buffer.byteLength(code, 'utf8') > MAX_CODE_BYTES) return res.status(413).json({ error: 'Code is too large (50 KB maximum)' })
-  if (typeof language !== 'string' || !SUPPORTED_LANGUAGES.has(language)) {
-    return res.status(400).json({ error: 'Choose one supported language: Python, JavaScript, Java, C or C++' })
-  }
-
-  const startedAt = Date.now()
+router.get('/status', requireAuth, requireRole('hod', 'teacher', 'student'), (_req, res) => res.json(codeRunner.status()))
+router.post('/run', requireAuth, requireRole('student', 'teacher', 'hod'), async (req, res) => {
+  const parsed = runSchema.safeParse(req.body || {})
+  if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })) })
+  if (req.user.role === 'hod' && !(parsed.data.language === 'python' && parsed.data.source === 'print(\"ok\")' && !parsed.data.stdin)) return res.status(403).json({ error: 'HOD access is limited to the fixed runner test' })
+  if (!codeRunner.takeUserRun(`${req.user.role}:${req.user.id}`)) return res.status(429).json({ error: codeRunner.USER_LIMIT_MESSAGE })
+  const started = Date.now()
   try {
-    const result = await runInSandbox({ code, language, image: CODE_RUNNER_IMAGE })
-    logger.info({ student_id: req.user.id, language, status: result.status, duration_ms: Date.now() - startedAt }, 'Student code execution completed')
-    return res.status(result.status === 'runner_unavailable' ? 503 : 200).json({ ...result, duration_ms: Date.now() - startedAt })
+    const result = await codeRunner.run(parsed.data)
+    logger.info({ user_id: req.user.id, role: req.user.role, language: parsed.data.language, status: result.status, duration_ms: Date.now() - started }, 'Code execution completed')
+    return res.json(result)
   } catch (error) {
-    logger.error({ student_id: req.user.id, language, message: error.message }, 'Student code execution failed')
-    return res.status(500).json({ error: 'Code execution failed on the server' })
+    logger.info({ user_id: req.user.id, role: req.user.role, language: parsed.data.language, status: error.statusCode === 503 ? 'disabled' : 'runner_error', duration_ms: Date.now() - started }, 'Code execution completed')
+    return res.status(error.statusCode || 502).json({ error: error.message || 'Code execution failed' })
   }
 })
 
@@ -52,7 +36,7 @@ router.post('/submit', requireAuth, requireRole('student'), (req, res) => {
     return res.status(400).json({ error: 'room_id, code, and language are required' })
   }
   if (Buffer.byteLength(code, 'utf8') > MAX_CODE_BYTES) return res.status(413).json({ error: 'Code submission is too large' })
-  if (typeof language !== 'string' || !SUPPORTED_LANGUAGES.has(language)) return res.status(400).json({ error: 'Unsupported language' })
+  if (typeof language !== 'string' || !supportedLanguages.has(language)) return res.status(400).json({ error: 'Unsupported language' })
   const room = dbGet("SELECT id,code,semester FROM rooms WHERE id=? AND status='active'", [Number(room_id)])
   const student = dbGet('SELECT id,name,usn,semester FROM students WHERE id=?', [req.user.id])
   if (!room || !student || Number(room.semester) !== Number(student.semester)) return res.status(404).json({ error: 'Active room not found for this student' })

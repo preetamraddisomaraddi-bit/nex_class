@@ -1,7 +1,29 @@
 const express = require('express');
 const router = express.Router();
 const { dbGet, dbAll, dbRun } = require('../db/database');
-const { verifyTeacher, verifyStudent } = require('../middleware/auth');
+const { verifyTeacher, verifyStudent, verifyTeacherOrStudent } = require('../middleware/auth');
+const runner = require('../code/runnerService');
+const { z } = require('zod');
+const { logger } = require('../logging');
+const runSchema = z.object({ language: z.enum(['python', 'javascript', 'java', 'c', 'cpp']), source: z.string().min(1).refine(s => Buffer.byteLength(s) <= 50 * 1024, 'Must be 50 KB or less'), stdin: z.string().optional().default('').refine(s => Buffer.byteLength(s) <= 10 * 1024, 'Must be 10 KB or less') }).strict();
+
+router.get('/status', verifyTeacherOrStudent, (_req, res) => res.json(runner.status()));
+router.post('/run', verifyTeacherOrStudent, async (req, res) => {
+  const parsed = runSchema.safeParse(req.body || {})
+  if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })) })
+  const userKey = `${req.user.role}:${req.user.id}`
+  if (!runner.takeUserRun(userKey)) return res.status(429).json({ error: runner.USER_LIMIT_MESSAGE })
+  const started = Date.now()
+  try {
+    const result = await runner.run(parsed.data)
+    logger.info({ event: 'code_run', user_id: req.user.id, language: parsed.data.language, status: result.status, duration_ms: Date.now() - started }, 'Code execution completed')
+    res.json(result)
+  } catch (error) {
+    const status = error.statusCode || 502
+    logger.info({ event: 'code_run', user_id: req.user.id, language: parsed.data.language, status: status === 503 ? 'disabled' : 'runner_error', duration_ms: Date.now() - started }, 'Code execution completed')
+    res.status(status).json({ error: error.message || 'Code execution failed' })
+  }
+})
 
 router.post('/submit', verifyStudent, async (req, res) => {
   try {

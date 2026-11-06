@@ -429,12 +429,19 @@ function CodeTab({ roomCode, socket, student, room }) {
   const [language, setLanguage] = useState('python')
   const [output, setOutput] = useState('')
   const [running, setRunning] = useState(false)
+  const [codeRunnerEnabled, setCodeRunnerEnabled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiHint, setAiHint] = useState('')
   const [showAiPanel, setShowAiPanel] = useState(false)
 
   const languages = ['python', 'javascript', 'java', 'c', 'cpp']
+
+  useEffect(() => {
+    let active = true
+    getAPI().get('/code/status').then(({ data }) => { if (active) setCodeRunnerEnabled(Boolean(data.enabled)) }).catch(() => { if (active) setCodeRunnerEnabled(false) })
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     socket.on('code:received', handleBroadcast)
@@ -448,13 +455,16 @@ function CodeTab({ roomCode, socket, student, room }) {
   }
 
   async function runCode() {
+    if (running || !codeRunnerEnabled) return
     setRunning(true)
     setOutput('Compiling and running on the department server...')
     try {
-      const { data } = await getAPI().post('/code/execute', { code, language }, { timeout: 20000 })
-      setOutput(data.output || 'Execution completed. (No output returned)')
+      const { data } = await getAPI().post('/code/run', { source: code, language, stdin: '' }, { timeout: 20000 })
+      const label = data.status === 'timeout' ? 'Time limit exceeded' : data.status === 'compile_error' ? 'Compile error' : data.status === 'runtime_error' ? 'Runtime error' : data.status === 'memory_limit' ? 'Memory limit exceeded' : 'Execution complete'
+      setOutput([label, data.compile_output, data.stderr, data.stdout].filter(Boolean).join('\n') || 'Execution completed. (No output returned)')
     } catch (error) {
-      setOutput(error.response?.data?.error || 'Could not run code. Check that the department server and its local code runner are available.')
+      const message = error.response?.data?.error || 'Could not run code on the department server.'
+      setOutput(message === 'Code runner is busy, try again' ? 'Runner busy, try again' : message)
     } finally {
       setRunning(false)
     }
@@ -497,10 +507,11 @@ function CodeTab({ roomCode, socket, student, room }) {
             {languages.map(l => <option key={l} value={l}>{l}</option>)}
           </select>
 
-          <button onClick={runCode} disabled={running}
+          <button onClick={runCode} disabled={running || !codeRunnerEnabled}
             className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium">
             {running ? 'Running...' : '▶ Run Code'}
           </button>
+          {!codeRunnerEnabled && <span className="text-xs text-[var(--muted)]">Code running is not enabled on this server.</span>}
 
           <button onClick={submitCode} disabled={submitting}
             className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium">

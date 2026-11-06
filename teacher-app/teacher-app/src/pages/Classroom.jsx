@@ -736,7 +736,29 @@ function NotesTab({ roomCode, room }) {
 function CodeTab({ roomCode, socket }) {
   const [code, setCode] = useState('# Write your code here\nprint("Hello, EduSync!")')
   const [language, setLanguage] = useState('python')
+  const [runnerEnabled, setRunnerEnabled] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [output, setOutput] = useState('')
   const languages = ['python', 'javascript', 'java', 'c', 'cpp']
+
+  useEffect(() => {
+    let active = true
+    getAPI().get('/api/code/status').then(({ data }) => { if (active) setRunnerEnabled(Boolean(data.enabled)) }).catch(() => { if (active) setRunnerEnabled(false) })
+    return () => { active = false }
+  }, [])
+
+  async function runCode() {
+    if (!runnerEnabled || running) return
+    setRunning(true); setOutput('Running on the department server...')
+    try {
+      const { data } = await getAPI().post('/api/code/run', { source: code, language, stdin: '' }, { timeout: 20000 })
+      const label = data.status === 'timeout' ? 'Time limit exceeded' : data.status === 'compile_error' ? 'Compile error' : data.status === 'runtime_error' ? 'Runtime error' : data.status === 'memory_limit' ? 'Memory limit exceeded' : 'Execution complete'
+      setOutput([label, data.compile_output, data.stderr, data.stdout].filter(Boolean).join('\n') || 'Execution completed. (No output returned)')
+    } catch (error) {
+      const message = error.response?.data?.error || 'Could not run code on the department server.'
+      setOutput(message === 'Code runner is busy, try again' ? 'Runner busy, try again' : message)
+    } finally { setRunning(false) }
+  }
 
   function broadcast() {
     emitCodeBroadcast({ room_code: roomCode, code, language })
@@ -753,10 +775,13 @@ function CodeTab({ roomCode, socket }) {
         <button onClick={broadcast} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
           📡 Broadcast to Students
         </button>
+        <button onClick={runCode} disabled={!runnerEnabled || running} className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">{running ? 'Running...' : '▶ Run Code'}</button>
+        {!runnerEnabled && <span className="text-xs text-[var(--muted)]">Code running is not enabled on this server.</span>}
       </div>
       <textarea value={code} onChange={e => setCode(e.target.value)}
         className="flex-1 bg-[#0d1117] text-[#86efac] font-mono text-sm p-6 resize-none focus:outline-none"
         spellCheck={false} />
+      <div className="h-28 bg-[#161b22] border-t border-slate-700/60 p-4 font-mono text-sm overflow-y-auto text-[#CBD5E1]"><div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Execution Output</div><pre className="whitespace-pre-wrap">{output || 'No output yet. Click "Run Code" to compile.'}</pre></div>
     </div>
   )
 }
