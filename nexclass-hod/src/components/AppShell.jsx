@@ -4,6 +4,7 @@ import { useToast } from './AlertToast'
 import { useHOD } from '../context/HODContext'
 import { apiRequest } from '../api'
 import { useServerStatus } from '../hooks/useServerStatus'
+import { useLicense } from '../hooks/useLicense'
 
 const items = [
   { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
@@ -12,6 +13,7 @@ const items = [
   { path: '/analytics', icon: '📊', label: 'Analytics' },
   { path: '/sessions', icon: '📋', label: 'Session Logs' },
   { path: '/alerts', icon: '🔔', label: 'Alerts' },
+  { path: '/license', icon: '🔑', label: 'License' },
   { path: '/downloads', icon: '📥', label: 'Downloads' },
 ]
 const headingFont = '"Plus Jakarta Sans", sans-serif'
@@ -38,6 +40,7 @@ export default function AppShell({ children }) {
   const showToast = useToast()
   const { pendingCount } = useHOD()
   const server = useServerStatus()
+  const { license } = useLicense()
   const [loggingOut, setLoggingOut] = useState(false)
   const [hodProfile, setHodProfile] = useState(() => {
     try { return JSON.parse(window.localStorage.getItem('nexclass_hod_data') || '{}') } catch { return {} }
@@ -96,6 +99,11 @@ export default function AppShell({ children }) {
   const hodName = hodProfile.name || 'Head of Department'
   const hodInitials = String(hodName).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0].toUpperCase()).join('') || 'H'
   const departmentName = hodProfile.department || 'Department'
+  const licenseBanner = !license ? null
+    : license.state === 'trial' ? { text: `Trial: ${license.daysLeft} days left`, color: 'var(--blue)', background: 'var(--blue-light)' }
+      : license.state === 'licensed' && license.daysLeft <= 30 ? { text: `License expires in ${license.daysLeft} days`, color: 'var(--amber)', background: 'var(--amber-light)' }
+        : license.state === 'grace' ? { text: `License expired. ${Math.max(0, Math.ceil((new Date(license.graceEndsAt) - date) / 86400000))} days of full access left`, color: 'var(--amber)', background: 'var(--amber-light)' }
+          : ['expired', 'unlicensed', 'invalid'].includes(license.state) ? { text: 'License expired. NexClass is read-only. Activate a license to continue.', color: 'var(--red)', background: 'var(--red-light)' } : null
   return (
     <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 14, color: 'var(--text)' }}>
       <aside style={{ position: 'fixed', left: 0, top: 0, bottom: 0, width: 220, background: 'var(--white)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', zIndex: 60 }}>
@@ -140,7 +148,10 @@ export default function AppShell({ children }) {
           <Avatar size={32} initials={hodInitials} />
         </div>
       </header>
-      <main style={{ position: 'relative', marginLeft: 220, marginTop: 56, height: 'calc(100vh - 56px)', minHeight: 'calc(100vh - 56px)', background: 'var(--bg)', padding: 28, overflowY: 'auto' }}>{children}</main>
+      <main style={{ position: 'relative', marginLeft: 220, marginTop: 56, height: 'calc(100vh - 56px)', minHeight: 'calc(100vh - 56px)', background: 'var(--bg)', padding: 28, overflowY: 'auto' }}>
+        {licenseBanner && <button type="button" onClick={() => navigate('/license')} style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 18, padding: '9px 14px', border: '1px solid transparent', borderRadius: 8, background: licenseBanner.background, color: licenseBanner.color, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{licenseBanner.text} · View license</button>}
+        {children}
+      </main>
     </div>
   )
 }

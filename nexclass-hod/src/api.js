@@ -31,6 +31,7 @@ export async function apiRequest(path, { method = 'GET', body, auth = true } = {
   if (!response.ok) {
     const error = new Error(data.error || `Request failed (${response.status})`)
     error.status = response.status
+    error.code = data.code
     throw error
   }
   return data

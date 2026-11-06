@@ -72,7 +72,7 @@ test('protected HOD route rejects a missing token with 401', async () => {
 test('createApp can be started without the desktop shell and health reports version and schema version', async () => {
   expect(runningServer.listening).toBe(false)
   const response = await request(app).get('/api/health').expect(200)
-  expect(response.body).toMatchObject({ status: 'ok', dbOk: true, schemaVersion: 3, connectedSockets: 0 })
+  expect(response.body).toMatchObject({ status: 'ok', dbOk: true, schemaVersion: 4, connectedSockets: 0 })
   expect(response.body.version).toBe(require('../package.json').version)
   expect(typeof response.body.uptime).toBe('number')
 })
@@ -81,9 +81,9 @@ test('fresh data directory runs migrations once', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexclass-migrations-fresh-'))
   const freshDb = new Database(path.join(dir, 'fresh.db'))
   try {
-    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(3)
-    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(3)
-    expect(freshDb.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n).toBe(3)
+    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(4)
+    expect(await runMigrations(freshDb, { dataDir: dir })).toBe(4)
+    expect(freshDb.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get().n).toBe(4)
   } finally { freshDb.close(); fs.rmSync(dir, { recursive: true, force: true }) }
 })
 
@@ -99,7 +99,7 @@ test('old database without migration table upgrades and preserves records', asyn
       oldDb.exec(`ALTER TABLE ${table} DROP COLUMN locked_until`)
     }
     oldDb.exec('DROP TABLE audit_log')
-    expect(await runMigrations(oldDb, { dataDir: dir })).toBe(3)
+    expect(await runMigrations(oldDb, { dataDir: dir })).toBe(4)
     expect(oldDb.prepare('SELECT name FROM students WHERE usn=?').get('LEGACY-1').name).toBe('Legacy student')
     expect(oldDb.prepare('SELECT COUNT(*) AS n FROM audit_log').get().n).toBe(0)
     expect(fs.readdirSync(path.join(dir, 'backups')).some(name => name.startsWith('pre-migration-2-'))).toBe(true)

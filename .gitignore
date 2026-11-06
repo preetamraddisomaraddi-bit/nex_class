@@ -15,6 +15,9 @@ dist-electron/
 build/
 release/
 out/
+tools/license-generator/keys/
+tools/license-generator/out/
+*.private.pem
 *.exe
 *.msi
 *.dmg

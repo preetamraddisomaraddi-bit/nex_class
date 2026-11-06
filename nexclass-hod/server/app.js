@@ -73,6 +73,8 @@ function createApp() {
   app.use('/api/alerts', require('./routes/alerts'))
   app.use('/api/code', require('./routes/code'))
   app.use('/api/audit', require('./routes/audit'))
+  app.use('/api/license', require('./routes/license'))
+  app.use('/api/ai', require('./routes/ai'))
 
   app.use((err, _req, res, _next) => {
     logger.error({ message: err?.message, stack: err?.stack, code: err?.code, status: err?.status }, 'API request failed')

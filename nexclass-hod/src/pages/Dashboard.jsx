@@ -6,6 +6,7 @@ import { useHOD } from '../context/HODContext'
 import { apiRequest } from '../api'
 import { MONTHLY_STATS } from '../data/mockData'
 import { useServerStatus } from '../hooks/useServerStatus'
+import { useLicense } from '../hooks/useLicense'
 
 const headingFont = '"Plus Jakarta Sans", sans-serif'
 const panelStyle = {
@@ -42,6 +43,7 @@ const dateLabel = value => value
 
 export default function Dashboard() {
   const server = useServerStatus()
+  const { license } = useLicense()
   const navigate = useNavigate()
   const showToast = useToast()
   const { teachers, approveTeacher, rejectTeacher, realtime, refreshTeachers } = useHOD()
@@ -190,6 +192,7 @@ export default function Dashboard() {
           <div title={server.address} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 7, padding: '4px 8px', borderRadius: 20, background: 'var(--indigo-light)', color: 'var(--indigo)', fontSize: 10, maxWidth: 310 }}>
             <span style={{ whiteSpace: 'nowrap' }}>Students connect at:</span><span style={{ fontFamily: '"JetBrains Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{server.address}</span>
           </div>
+          {license && <button type="button" onClick={() => navigate('/license')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 7, marginLeft: 6, padding: '4px 9px', border: 0, borderRadius: 20, background: license.state === 'licensed' ? 'var(--green-light)' : license.state === 'trial' ? 'var(--blue-light)' : 'var(--amber-light)', color: license.state === 'licensed' ? 'var(--green)' : license.state === 'trial' ? 'var(--blue)' : 'var(--amber)', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🔑 {license.state === 'licensed' ? 'License active' : license.state === 'trial' ? `Trial · ${license.daysLeft}d` : license.state === 'grace' ? 'Grace period' : 'License expired'}</button>}
         </div>
       </section>
 

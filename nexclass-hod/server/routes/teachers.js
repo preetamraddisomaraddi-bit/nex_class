@@ -4,6 +4,7 @@ const { requireAuth, requireRole } = require('../middleware/auth')
 const { validate, validateIdParam } = require('../middleware/validate')
 const { emptyBody } = require('../validation/schemas')
 const { writeAudit } = require('../db/database')
+const { requireWritable, requireSeat } = require('../middleware/license')
 const router = express.Router()
 const publicTeacher = (row) => { if (!row) return row; const { password_hash, ...safe } = row; return safe }
 
@@ -35,7 +36,7 @@ router.get('/:id', (req, res) => {
   res.json({ ...publicTeacher(teacher), sessions, exams })
 })
 
-router.patch('/:id/approve', requireRole('hod'), validate(emptyBody), (req, res) => {
+router.patch('/:id/approve', requireRole('hod'), requireWritable, requireSeat('teacher'), validate(emptyBody), (req, res) => {
   const result = dbRun("UPDATE teachers SET status='approved' WHERE id=?", [Number(req.params.id)])
   if (!result.changes) return res.status(404).json({ error: 'Teacher not found' })
   writeAudit({ role: 'hod', actorId: req.user.id, action: 'teacher_approve', target: `teacher:${req.params.id}`, ip: req.ip })

@@ -1,0 +1,7 @@
+{
+  "name": "nexclass-license-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vendor-only offline NexClass license tool",
+  "scripts": { "keygen": "node cli.js keygen", "issue": "node cli.js issue", "verify": "node cli.js verify" }
+}

@@ -19,6 +19,11 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   response => response,
   error => {
+    if (['LICENSE_EXPIRED', 'LICENSE_LIMIT'].includes(error.response?.data?.code)) {
+      const friendly = "Your institution's NexClass license needs attention. Please contact your HOD."
+      error.message = friendly
+      error.response.data.error = friendly
+    }
     const isAuthRequest = /\/api\/auth\/teacher\/(login|register)$/.test(error.config?.url || '')
     if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem('nexclass_teacher_token')

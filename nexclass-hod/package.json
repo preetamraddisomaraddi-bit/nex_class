@@ -5,14 +5,15 @@
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"vite --port 5175\" \"wait-on http://localhost:5175 && electron .\"",
-    "build": "vite build",
+    "build": "npm run check:no-private-key && vite build",
     "test:server": "cross-env ELECTRON_RUN_AS_NODE=1 electron node_modules/jest/bin/jest.js --runInBand --roots server/tests",
     "server:headless": "cross-env ELECTRON_RUN_AS_NODE=1 electron server/cli.js",
     "postinstall": "npm install --prefix server --omit=dev --ignore-scripts && electron-rebuild -f -w better-sqlite3 --module-dir=server",
-    "package": "vite build && electron-builder",
-    "package:win": "npm run build && electron-builder --win nsis --x64",
-    "package:mac": "npm run build && electron-builder --mac dmg",
-    "package:linux": "npm run build && electron-builder --linux AppImage"
+    "check:no-private-key": "node ../tools/license-generator/check-no-private-key.js",
+    "package": "npm run check:no-private-key && vite build && electron-builder",
+    "package:win": "npm run check:no-private-key && npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run check:no-private-key && npm run build && electron-builder --mac dmg",
+    "package:linux": "npm run check:no-private-key && npm run build && electron-builder --linux AppImage"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

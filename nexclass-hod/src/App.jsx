@@ -10,6 +10,7 @@ import Analytics from './pages/Analytics'
 import SessionLogs from './pages/SessionLogs'
 import Alerts from './pages/Alerts'
 import Downloads from './pages/Downloads'
+import License from './pages/License'
 import Login from './pages/Login'
 import LoadingScreen from './components/LoadingScreen'
 import { apiRequest } from './api'
@@ -21,6 +22,7 @@ const pages = [
   'analytics',
   'sessions',
   'alerts',
+  'license',
   'downloads',
 ]
 
@@ -31,6 +33,7 @@ const pageComponents = {
   analytics: Analytics,
   sessions: SessionLogs,
   alerts: Alerts,
+  license: License,
   downloads: Downloads,
 }
 

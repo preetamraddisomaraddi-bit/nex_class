@@ -120,6 +120,14 @@ ipcMain.handle('save-file', async (_event, { filename, data, type }) => {
   fs.writeFileSync(filePath, data)
   return true
 })
+ipcMain.handle('pick-license-file', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow || undefined, {
+    title: 'Select NexClass license', properties: ['openFile'],
+    filters: [{ name: 'NexClass License', extensions: ['nexlicense', 'json'] }],
+  })
+  if (canceled || !filePaths?.[0]) return null
+  return { filePath: filePaths[0], content: fs.readFileSync(filePaths[0], 'utf8') }
+})
 
 const serverCliPath = path.join(__dirname, '../server/cli.js')
 const serverDataPath = path.join(app.getPath('userData'), 'server-data')

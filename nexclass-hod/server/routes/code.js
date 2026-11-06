@@ -4,6 +4,7 @@ const { dbGet, dbAll, dbRun } = require('../db/database')
 const codeRunner = require('../code/runnerService')
 const { logger } = require('../logging')
 const { z } = require('zod')
+const { requireFeature } = require('../middleware/license')
 const router = express.Router()
 const MAX_CODE_BYTES = 50 * 1024
 const supportedLanguages = new Set(codeRunner.LANGUAGES)
@@ -14,7 +15,7 @@ const runSchema = z.object({
 }).strict()
 
 router.get('/status', requireAuth, requireRole('hod', 'teacher', 'student'), (_req, res) => res.json(codeRunner.status()))
-router.post('/run', requireAuth, requireRole('student', 'teacher', 'hod'), async (req, res) => {
+router.post('/run', requireAuth, requireRole('student', 'teacher', 'hod'), requireFeature('codeRunner'), async (req, res) => {
   const parsed = runSchema.safeParse(req.body || {})
   if (!parsed.success) return res.status(400).json({ error: 'Validation failed', details: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })) })
   if (req.user.role === 'hod' && !(parsed.data.language === 'python' && parsed.data.source === 'print(\"ok\")' && !parsed.data.stdin)) return res.status(403).json({ error: 'HOD access is limited to the fixed runner test' })

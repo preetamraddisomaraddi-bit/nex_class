@@ -6,6 +6,7 @@ const { JWT_SECRET, JWT_EXPIRES } = require('../config')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { validate } = require('../middleware/validate')
 const { hodLogin, teacherLogin, teacherRegister, studentRegister, studentLogin, changePassword } = require('../validation/schemas')
+const { requireWritable, requireSeat } = require('../middleware/license')
 
 const router = express.Router()
 const clean = ({ password_hash, ...record }) => record
@@ -58,7 +59,7 @@ router.post('/hod/change-password', requireAuth, requireRole('hod'), validate(ch
   })
 })
 
-router.post('/teacher/register', validate(teacherRegister), (req, res) => {
+router.post('/teacher/register', requireWritable, validate(teacherRegister), (req, res) => {
   const { name, employee_id, email = '', password, subject = '', semester } = req.body || {}
   if (!name || !employee_id || !password || String(password).length < 8) {
     return res.status(400).json({ error: 'Name, employee ID and a password of at least 8 characters are required' })
@@ -89,7 +90,7 @@ router.post('/teacher/login', validate(teacherLogin), (req, res) => {
   res.json({ token: makeToken({ id: teacher.id, role: 'teacher', employee_id: teacher.employee_id }), teacher: clean(teacher) })
 })
 
-router.post('/student/register', validate(studentRegister), (req, res) => {
+router.post('/student/register', requireWritable, requireSeat('student'), validate(studentRegister), (req, res) => {
   const { name, usn, email = '', password, semester } = req.body || {}
   if (!name || !usn || !password || String(password).length < 8) {
     return res.status(400).json({ error: 'Name, USN and a password of at least 8 characters are required' })

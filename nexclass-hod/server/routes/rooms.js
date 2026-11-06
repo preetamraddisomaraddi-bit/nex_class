@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../middleware/auth')
 const { validate, validateCodeParam } = require('../middleware/validate')
 const { roomCreate, emptyBody } = require('../validation/schemas')
 const { writeAudit } = require('../db/database')
+const { requireWritable } = require('../middleware/license')
 const router = express.Router()
 router.use(requireAuth)
 router.param('code', validateCodeParam('code'))
@@ -50,7 +51,7 @@ router.get('/:code', (req, res) => {
   res.json({ ...room, attendance, notes, exams })
 })
 
-router.post('/', requireRole('teacher'), validate(roomCreate), (req, res) => {
+router.post('/', requireRole('teacher'), requireWritable, validate(roomCreate), (req, res) => {
   const { subject, semester } = req.body || {}
   if (!subject || !Number.isInteger(Number(semester))) return res.status(400).json({ error: 'Subject and semester are required' })
   const teacher = dbGet('SELECT status, semester FROM teachers WHERE id=?', [req.user.id])

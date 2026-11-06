@@ -34,6 +34,8 @@ async function start() {
   const database = require('./db/database')
   db = database.db
   const schemaVersion = await runMigrations(db, { dataDir: DATA_DIR })
+  const licensing = require('./license/service')
+  licensing.updateLastSeenOnStartup()
   // Remove only the exact obsolete seeded account from old installations.
   const legacy = db.prepare('SELECT id, employee_id, email FROM hod WHERE id=1').get()
   if (legacy?.employee_id === 'BIT-HOD-001' && legacy?.email === 'hod.cse@nexclass.demo') db.prepare('DELETE FROM hod WHERE id=1').run()
@@ -62,6 +64,9 @@ async function start() {
   const info = { ip: lanAddresses()[0], ips: lanAddresses(), port: address.port, schemaVersion, protocol }
   console.log(`\nNexClass Server v${require('./package.json').version}\n  Host:    ${HOST}\n  Port:    ${info.port}\n  LAN:     ${info.ips.map(ip => `http://${ip}:${info.port}`).join(', ')}\n  Data:    ${DATA_DIR}\n`)
   if (typeof process.send === 'function') process.send({ type: 'ready', ip: info.ip, ips: info.ips, port: info.port, schemaVersion, protocol })
+  const licenseClock = setInterval(() => licensing.getStatus(), 60 * 60 * 1000)
+  licenseClock.unref()
+  process.once('exit', () => clearInterval(licenseClock))
   return info
 }
 

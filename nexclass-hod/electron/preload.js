@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearToken: () => ipcRenderer.invoke('clear-token'),
   saveFile: (filename, data, type) =>
     ipcRenderer.invoke('save-file', { filename, data, type }),
+  pickLicenseFile: () => ipcRenderer.invoke('pick-license-file'),
 })
 

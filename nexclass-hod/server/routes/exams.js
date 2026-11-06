@@ -3,11 +3,12 @@ const { dbGet, dbRun } = require('../db/database')
 const { requireAuth, requireRole } = require('../middleware/auth')
 const { validate, validateIdParam } = require('../middleware/validate')
 const { examCreate } = require('../validation/schemas')
+const { requireFeature } = require('../middleware/license')
 const router = express.Router()
 router.use(requireAuth)
 router.param('id', validateIdParam('id'))
 
-router.post('/', requireRole('teacher'), validate(examCreate), (req, res) => {
+router.post('/', requireRole('teacher'), requireFeature('exams'), validate(examCreate), (req, res) => {
   const { room_id, title, duration_mins = 30, questions_json = [] } = req.body || {}
   if (!room_id || !title) return res.status(400).json({ error: 'Room and exam title are required' })
   const room = dbGet("SELECT * FROM rooms WHERE id=? AND teacher_id=? AND status='active'", [Number(room_id), req.user.id])
